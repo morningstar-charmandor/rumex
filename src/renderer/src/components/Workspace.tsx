@@ -30,15 +30,34 @@ function AppView(props: {
     const onStop = (): void => setLoading(false)
     view.addEventListener('did-start-loading', onStart)
     view.addEventListener('did-stop-loading', onStop)
+
+    // Electron's <webview> hosts the guest page in a shadow-DOM iframe that
+    // can get stuck at a stale size (content renders cropped, the rest shows
+    // the webview background). Pin the iframe to 100% and re-assert whenever
+    // the webview element itself resizes.
+    const fixGuestSize = (): void => {
+      const iframe = view.shadowRoot?.querySelector('iframe')
+      if (iframe) {
+        iframe.style.width = '100%'
+        iframe.style.height = '100%'
+      }
+    }
+    fixGuestSize()
+    view.addEventListener('dom-ready', fixGuestSize)
+    const observer = new ResizeObserver(fixGuestSize)
+    observer.observe(view)
+
     return () => {
       view.removeEventListener('did-start-loading', onStart)
       view.removeEventListener('did-stop-loading', onStop)
+      view.removeEventListener('dom-ready', fixGuestSize)
+      observer.disconnect()
     }
   }, [])
 
   return (
     <div
-      className={`absolute inset-0 ${props.active ? '' : 'invisible pointer-events-none'}`}
+      className={`absolute inset-0 ${props.active ? 'z-10' : 'z-0 opacity-0 pointer-events-none'}`}
     >
       <webview
         ref={ref}
