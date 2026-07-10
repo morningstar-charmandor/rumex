@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
 import { partitionFor } from '../../../shared/types'
+import { cleanTitle } from '../catalog'
 import { appKey } from '../App'
 
 interface WorkspaceProps {
   contexts: WorkContext[]
   activeApp: ActiveApp | null
   openedKeys: Set<string>
+  onAutoName(contextId: string, appId: string, title: string): void
 }
 
 /**
@@ -19,17 +21,25 @@ function AppView(props: {
   context: WorkContext
   webApp: WebApp
   active: boolean
+  onTitle(title: string): void
 }): JSX.Element {
   const ref = useRef<HTMLElement>(null)
   const [loading, setLoading] = useState(true)
+  const onTitleRef = useRef(props.onTitle)
+  onTitleRef.current = props.onTitle
 
   useEffect(() => {
     const view = ref.current
     if (!view) return
     const onStart = (): void => setLoading(true)
     const onStop = (): void => setLoading(false)
+    const onTitleUpdated = (event: Event): void => {
+      const title = (event as Event & { title?: string }).title ?? ''
+      onTitleRef.current(cleanTitle(title))
+    }
     view.addEventListener('did-start-loading', onStart)
     view.addEventListener('did-stop-loading', onStop)
+    view.addEventListener('page-title-updated', onTitleUpdated)
 
     // Electron's <webview> hosts the guest page in a shadow-DOM iframe that
     // can get stuck at a stale size (content renders cropped, the rest shows
@@ -50,6 +60,7 @@ function AppView(props: {
     return () => {
       view.removeEventListener('did-start-loading', onStart)
       view.removeEventListener('did-stop-loading', onStop)
+      view.removeEventListener('page-title-updated', onTitleUpdated)
       view.removeEventListener('dom-ready', fixGuestSize)
       observer.disconnect()
     }
@@ -98,6 +109,7 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
           context={context}
           webApp={webApp}
           active={activeKey === appKey(context.id, webApp.id)}
+          onTitle={(title) => props.onAutoName(context.id, webApp.id, title)}
         />
       ))}
 

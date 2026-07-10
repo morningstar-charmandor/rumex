@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
 import type { ActiveApp, WorkContext } from '../../../shared/types'
+import { buildSuggestions } from '../catalog'
 import type { NavAction } from '../App'
 
 interface SidebarProps {
@@ -13,10 +14,14 @@ interface SidebarProps {
   onSelectApp(contextId: string, appId: string): void
   onToggleExpanded(contextId: string): void
   onAddContext(name: string): void
-  onAddApp(contextId: string, name: string, url: string): void
+  onAddApp(contextId: string, name: string, url: string, autoNamed: boolean): void
   onDeleteApp(contextId: string, appId: string): void
   onDeleteContext(contextId: string): void
+  onRenameContext(contextId: string, name: string): void
+  onRenameApp(contextId: string, appId: string, name: string): void
 }
+
+type Renaming = { kind: 'context'; contextId: string } | { kind: 'app'; contextId: string; appId: string }
 
 function NavButton(props: {
   title: string
@@ -38,35 +43,43 @@ function NavButton(props: {
 
 function InlineInput(props: {
   placeholder: string
+  initial?: string
   onSubmit(value: string): void
   onCancel(): void
 }): JSX.Element {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(props.initial ?? '')
   return (
     <input
       autoFocus
       value={value}
       placeholder={props.placeholder}
+      onFocus={(e) => e.target.select()}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && value.trim()) props.onSubmit(value)
         if (e.key === 'Escape') props.onCancel()
       }}
       onBlur={props.onCancel}
-      className="w-full rounded-md bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
+      onClick={(e) => e.stopPropagation()}
+      className="w-full min-w-0 rounded-md bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
     />
   )
 }
 
+/**
+ * Single searchable input: matches a catalog of popular apps, accepts pasted
+ * URLs, and falls back to guessing "<word>.com". The app name is derived
+ * automatically (and later refined from the page title for URL guesses).
+ */
 function AddAppForm(props: {
-  onSubmit(name: string, url: string): void
+  onSubmit(name: string, url: string, autoNamed: boolean): void
   onCancel(): void
 }): JSX.Element {
-  const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
-  const submit = (): void => {
-    if (name.trim() && url.trim()) props.onSubmit(name, url)
-  }
+  const [query, setQuery] = useState('')
+  const [highlight, setHighlight] = useState(0)
+  const suggestions = useMemo(() => buildSuggestions(query), [query])
+  const selected = suggestions[Math.min(highlight, suggestions.length - 1)]
+
   return (
     <div
       className="ml-4 flex flex-col gap-1 rounded-md bg-zinc-900 p-2 ring-1 ring-zinc-800"
@@ -76,33 +89,47 @@ function AddAppForm(props: {
     >
       <input
         autoFocus
-        value={name}
-        placeholder="Name (e.g. Figma)"
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
+        value={query}
+        placeholder="Search apps or paste a URL…"
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setHighlight(0)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setHighlight((h) => Math.min(h + 1, suggestions.length - 1))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setHighlight((h) => Math.max(h - 1, 0))
+          } else if (e.key === 'Enter' && selected) {
+            props.onSubmit(selected.name, selected.url, selected.autoNamed)
+          }
+        }}
         className="rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
       />
-      <input
-        value={url}
-        placeholder="URL (e.g. figma.com)"
-        onChange={(e) => setUrl(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-        className="rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
-      />
-      <div className="mt-1 flex justify-end gap-1">
-        <button
-          onClick={props.onCancel}
-          className="rounded px-2 py-0.5 text-[12px] text-zinc-400 hover:bg-zinc-800"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={!name.trim() || !url.trim()}
-          className="rounded bg-zinc-100 px-2 py-0.5 text-[12px] font-medium text-zinc-900 hover:bg-white disabled:opacity-40"
-        >
-          Add
-        </button>
+      <div className="flex flex-col">
+        {suggestions.map((s, i) => (
+          <button
+            key={`${s.url}-${s.name}`}
+            onMouseEnter={() => setHighlight(i)}
+            onMouseDown={(e) => {
+              e.preventDefault()
+              props.onSubmit(s.name, s.url, s.autoNamed)
+            }}
+            className={`flex items-baseline gap-2 rounded px-2 py-1 text-left ${
+              i === highlight ? 'bg-zinc-800' : ''
+            }`}
+          >
+            <span className="truncate text-[13px] text-zinc-200">{s.name}</span>
+            <span className="ml-auto shrink-0 text-[11px] text-zinc-500">{s.hint}</span>
+          </button>
+        ))}
+        {suggestions.length === 0 && (
+          <span className="px-2 py-1 text-[12px] text-zinc-600">
+            Keep typing, or paste a full URL
+          </span>
+        )}
       </div>
     </div>
   )
@@ -111,7 +138,13 @@ function AddAppForm(props: {
 export default function Sidebar(props: SidebarProps): JSX.Element {
   const [addingContext, setAddingContext] = useState(false)
   const [addingAppTo, setAddingAppTo] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<Renaming | null>(null)
   const isMac = window.api.platform === 'darwin'
+
+  const isRenamingContext = (contextId: string): boolean =>
+    renaming?.kind === 'context' && renaming.contextId === contextId
+  const isRenamingApp = (contextId: string, appId: string): boolean =>
+    renaming?.kind === 'app' && renaming.contextId === contextId && renaming.appId === appId
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950">
@@ -157,48 +190,63 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
           return (
             <div key={context.id}>
               <div className="group flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-zinc-900">
-                <button
-                  onClick={() => props.onToggleExpanded(context.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  title={isExpanded ? 'Collapse' : 'Expand'}
-                >
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: context.color }}
+                {isRenamingContext(context.id) ? (
+                  <InlineInput
+                    placeholder="Context name"
+                    initial={context.name}
+                    onSubmit={(name) => {
+                      props.onRenameContext(context.id, name)
+                      setRenaming(null)
+                    }}
+                    onCancel={() => setRenaming(null)}
                   />
-                  <span className="truncate text-[13px] font-medium text-zinc-300">
-                    {context.name}
-                  </span>
-                  <svg
-                    viewBox="0 0 16 16"
-                    className={`h-3 w-3 shrink-0 fill-zinc-600 transition-transform ${
-                      isExpanded ? 'rotate-90' : ''
-                    }`}
-                  >
-                    <path d="M6 4l4 4-4 4z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => {
-                    setAddingAppTo(context.id)
-                    if (!isExpanded) props.onToggleExpanded(context.id)
-                  }}
-                  title="Add app"
-                  className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
-                >
-                  <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
-                    <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => props.onDeleteContext(context.id)}
-                  title="Delete context"
-                  className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-red-400 group-hover:flex"
-                >
-                  <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
-                    <path d="M6.5 2h3l.5 1H13v1.5H3V3h3zM4 6h8l-.6 8H4.6z" />
-                  </svg>
-                </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => props.onToggleExpanded(context.id)}
+                      onDoubleClick={() => setRenaming({ kind: 'context', contextId: context.id })}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      title="Click to collapse/expand · double-click to rename"
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: context.color }}
+                      />
+                      <span className="truncate text-[13px] font-medium text-zinc-300">
+                        {context.name}
+                      </span>
+                      <svg
+                        viewBox="0 0 16 16"
+                        className={`h-3 w-3 shrink-0 fill-zinc-600 transition-transform ${
+                          isExpanded ? 'rotate-90' : ''
+                        }`}
+                      >
+                        <path d="M6 4l4 4-4 4z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAddingAppTo(context.id)
+                        if (!isExpanded) props.onToggleExpanded(context.id)
+                      }}
+                      title="Add app"
+                      className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
+                    >
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
+                        <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => props.onDeleteContext(context.id)}
+                      title="Delete context"
+                      className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-red-400 group-hover:flex"
+                    >
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
+                        <path d="M6.5 2h3l.5 1H13v1.5H3V3h3zM4 6h8l-.6 8H4.6z" />
+                      </svg>
+                    </button>
+                  </>
+                )}
               </div>
 
               {isExpanded && (
@@ -214,41 +262,59 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           isActive ? 'bg-zinc-800/90' : 'hover:bg-zinc-900'
                         }`}
                       >
-                        <button
-                          onClick={() => props.onSelectApp(context.id, webApp.id)}
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                        >
-                          <span
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-zinc-950"
-                            style={{ backgroundColor: context.color }}
-                          >
-                            {webApp.name.charAt(0).toUpperCase()}
-                          </span>
-                          <span
-                            className={`truncate text-[13px] ${
-                              isActive ? 'text-zinc-100' : 'text-zinc-400'
-                            }`}
-                          >
-                            {webApp.name}
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => props.onDeleteApp(context.id, webApp.id)}
-                          title="Remove app and wipe its session"
-                          className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-red-400 group-hover:flex"
-                        >
-                          <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
-                            <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
-                          </svg>
-                        </button>
+                        {isRenamingApp(context.id, webApp.id) ? (
+                          <InlineInput
+                            placeholder="App name"
+                            initial={webApp.name}
+                            onSubmit={(name) => {
+                              props.onRenameApp(context.id, webApp.id, name)
+                              setRenaming(null)
+                            }}
+                            onCancel={() => setRenaming(null)}
+                          />
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => props.onSelectApp(context.id, webApp.id)}
+                              onDoubleClick={() =>
+                                setRenaming({ kind: 'app', contextId: context.id, appId: webApp.id })
+                              }
+                              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                              title={`${webApp.url} · double-click to rename`}
+                            >
+                              <span
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-zinc-950"
+                                style={{ backgroundColor: context.color }}
+                              >
+                                {webApp.name.charAt(0).toUpperCase()}
+                              </span>
+                              <span
+                                className={`truncate text-[13px] ${
+                                  isActive ? 'text-zinc-100' : 'text-zinc-400'
+                                }`}
+                              >
+                                {webApp.name}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => props.onDeleteApp(context.id, webApp.id)}
+                              title="Remove app and wipe its session"
+                              className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-red-400 group-hover:flex"
+                            >
+                              <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
+                                <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
                       </div>
                     )
                   })}
 
                   {addingAppTo === context.id && (
                     <AddAppForm
-                      onSubmit={(name, url) => {
-                        props.onAddApp(context.id, name, url)
+                      onSubmit={(name, url, autoNamed) => {
+                        props.onAddApp(context.id, name, url, autoNamed)
                         setAddingAppTo(null)
                       }}
                       onCancel={() => setAddingAppTo(null)}

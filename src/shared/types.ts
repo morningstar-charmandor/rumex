@@ -2,6 +2,8 @@ export interface WebApp {
   id: string
   name: string
   url: string
+  /** Name was derived from the URL; replace it with the page title once loaded. */
+  autoNamed?: boolean
 }
 
 export interface WorkContext {

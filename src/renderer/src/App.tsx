@@ -30,11 +30,6 @@ function seedState(): AppState {
   }
 }
 
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim()
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-}
-
 function activeWebview(active: ActiveApp | null): WebviewElement | null {
   if (!active) return null
   const key = appKey(active.contextId, active.appId)
@@ -158,8 +153,8 @@ export default function App(): JSX.Element {
   }, [])
 
   const addApp = useCallback(
-    (contextId: string, name: string, url: string) => {
-      const application = { id: crypto.randomUUID(), name: name.trim(), url: normalizeUrl(url) }
+    (contextId: string, name: string, url: string, autoNamed: boolean) => {
+      const application = { id: crypto.randomUUID(), name: name.trim(), url, autoNamed }
       setState((s) => {
         if (!s) return s
         return {
@@ -173,6 +168,60 @@ export default function App(): JSX.Element {
     },
     [selectApp]
   )
+
+  const renameContext = useCallback((contextId: string, name: string) => {
+    setState((s) => {
+      if (!s || !name.trim()) return s
+      return {
+        ...s,
+        contexts: s.contexts.map((c) => (c.id === contextId ? { ...c, name: name.trim() } : c))
+      }
+    })
+  }, [])
+
+  const renameApp = useCallback((contextId: string, appId: string, name: string) => {
+    setState((s) => {
+      if (!s || !name.trim()) return s
+      return {
+        ...s,
+        contexts: s.contexts.map((c) =>
+          c.id === contextId
+            ? {
+                ...c,
+                apps: c.apps.map((a) =>
+                  // A manual rename always wins: stop auto-naming afterwards.
+                  a.id === appId ? { ...a, name: name.trim(), autoNamed: false } : a
+                )
+              }
+            : c
+        )
+      }
+    })
+  }, [])
+
+  // When an app was added without an explicit name, adopt the page title the
+  // first time the site reports one, then leave the name alone.
+  const autoNameApp = useCallback((contextId: string, appId: string, title: string) => {
+    if (!title.trim()) return
+    setState((s) => {
+      if (!s) return s
+      const app = s.contexts.find((c) => c.id === contextId)?.apps.find((a) => a.id === appId)
+      if (!app?.autoNamed) return s
+      return {
+        ...s,
+        contexts: s.contexts.map((c) =>
+          c.id === contextId
+            ? {
+                ...c,
+                apps: c.apps.map((a) =>
+                  a.id === appId ? { ...a, name: title, autoNamed: false } : a
+                )
+              }
+            : c
+        )
+      }
+    })
+  }, [])
 
   const deleteApp = useCallback((contextId: string, appId: string) => {
     if (!window.confirm('Remove this app? Its isolated session data will be wiped.')) return
@@ -237,8 +286,15 @@ export default function App(): JSX.Element {
         onAddApp={addApp}
         onDeleteApp={deleteApp}
         onDeleteContext={deleteContext}
+        onRenameContext={renameContext}
+        onRenameApp={renameApp}
       />
-      <Workspace contexts={state.contexts} activeApp={state.activeApp} openedKeys={openedKeys} />
+      <Workspace
+        contexts={state.contexts}
+        activeApp={state.activeApp}
+        openedKeys={openedKeys}
+        onAutoName={autoNameApp}
+      />
     </div>
   )
 }
