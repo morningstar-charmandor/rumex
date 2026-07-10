@@ -1,17 +1,39 @@
 import { useState } from 'react'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import type { ActiveApp, WorkContext } from '../../../shared/types'
+import type { NavAction } from '../App'
 
 interface SidebarProps {
   contexts: WorkContext[]
   activeApp: ActiveApp | null
   expanded: string[]
+  canGoBack: boolean
+  canGoForward: boolean
+  onNavigate(action: NavAction): void
   onSelectApp(contextId: string, appId: string): void
   onToggleExpanded(contextId: string): void
   onAddContext(name: string): void
   onAddApp(contextId: string, name: string, url: string): void
   onDeleteApp(contextId: string, appId: string): void
   onDeleteContext(contextId: string): void
+}
+
+function NavButton(props: {
+  title: string
+  disabled: boolean
+  onClick(): void
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <button
+      onClick={props.onClick}
+      disabled={props.disabled}
+      title={props.title}
+      className="no-drag flex h-6 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-30"
+    >
+      {props.children}
+    </button>
+  )
 }
 
 function InlineInput(props: {
@@ -99,6 +121,35 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
           ContextWorkspace
         </span>
       </div>
+
+      {props.activeApp && (
+        <div className="flex items-center gap-0.5 border-b border-zinc-800/80 px-3 pb-2">
+          <NavButton
+            title="Back (⌘[)"
+            disabled={!props.canGoBack}
+            onClick={() => props.onNavigate('back')}
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 3L5 8l5 5" />
+            </svg>
+          </NavButton>
+          <NavButton
+            title="Forward (⌘])"
+            disabled={!props.canGoForward}
+            onClick={() => props.onNavigate('forward')}
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 3l5 5-5 5" />
+            </svg>
+          </NavButton>
+          <NavButton title="Reload (⌘R)" disabled={false} onClick={() => props.onNavigate('reload')}>
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.97" />
+              <path d="M13.7 1.8v3h-3" />
+            </svg>
+          </NavButton>
+        </div>
+      )}
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
         {props.contexts.map((context) => {

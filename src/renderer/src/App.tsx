@@ -43,8 +43,11 @@ function activeWebview(active: ActiveApp | null): WebviewElement | null {
   ) as WebviewElement | null
 }
 
+export type NavAction = 'back' | 'forward' | 'reload'
+
 export default function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
+  const [navState, setNavState] = useState({ canGoBack: false, canGoForward: false })
   // Keys of app instances that have been opened this session; their webviews
   // stay mounted (just hidden) so switching contexts is instant and sessions
   // stay warm.
@@ -88,6 +91,43 @@ export default function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [state?.activeApp])
+
+  // Track whether the active app can navigate back/forward so the sidebar
+  // buttons reflect real history state. canGoBack/canGoForward throw until
+  // the webview is attached, hence the try/catch.
+  useEffect(() => {
+    const view = activeWebview(state?.activeApp ?? null)
+    if (!view) {
+      setNavState({ canGoBack: false, canGoForward: false })
+      return
+    }
+    const update = (): void => {
+      try {
+        setNavState({ canGoBack: view.canGoBack(), canGoForward: view.canGoForward() })
+      } catch {
+        setNavState({ canGoBack: false, canGoForward: false })
+      }
+    }
+    update()
+    const events = ['dom-ready', 'did-navigate', 'did-navigate-in-page', 'did-stop-loading']
+    events.forEach((name) => view.addEventListener(name, update))
+    return () => events.forEach((name) => view.removeEventListener(name, update))
+  }, [state?.activeApp])
+
+  const navigate = useCallback(
+    (action: NavAction) => {
+      const view = activeWebview(state?.activeApp ?? null)
+      if (!view) return
+      try {
+        if (action === 'back' && view.canGoBack()) view.goBack()
+        else if (action === 'forward' && view.canGoForward()) view.goForward()
+        else if (action === 'reload') view.reload()
+      } catch {
+        // webview not attached yet — nothing to navigate
+      }
+    },
+    [state?.activeApp]
+  )
 
   const selectApp = useCallback((contextId: string, appId: string) => {
     setOpenedKeys((prev) => new Set(prev).add(appKey(contextId, appId)))
@@ -188,6 +228,9 @@ export default function App(): JSX.Element {
         contexts={state.contexts}
         activeApp={state.activeApp}
         expanded={state.expanded}
+        canGoBack={navState.canGoBack}
+        canGoForward={navState.canGoForward}
+        onNavigate={navigate}
         onSelectApp={selectApp}
         onToggleExpanded={toggleExpanded}
         onAddContext={addContext}
