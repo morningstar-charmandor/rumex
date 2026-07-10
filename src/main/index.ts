@@ -1,11 +1,52 @@
 import { app, BrowserWindow, ipcMain, session, screen, shell } from 'electron'
 import type { Rectangle } from 'electron'
+import { cpSync, existsSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
-import { readJson, writeJson } from './store'
-import type { AppState } from '../shared/types'
+import { readJson, readJsonFile, writeJson } from './store'
+import { createDockApp } from './dockapp'
+import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
 
 const APP_STATE_FILE = 'app-state.json'
+const CLIENT_STATE_FILE = 'client-state.json'
 const WINDOW_STATE_FILE = 'window-state.json'
+
+// Per-context Dock apps launch this same entry with CW_* env vars set by
+// their stub. Client mode gets its own userData directory (two Chromium
+// processes must never share one), while the app name — and therefore the
+// Keychain cookie-encryption key — stays identical to the main app's.
+const clientContextId = process.env['CW_CONTEXT_ID'] ?? null
+const clientContextName = process.env['CW_CONTEXT_NAME'] ?? 'Workspace'
+const mainAppUserData = process.env['CW_MAIN_USERDATA'] ?? null
+
+if (clientContextId) {
+  app.setPath(
+    'userData',
+    join(app.getPath('appData'), 'ContextWorkspace-Clients', clientContextId)
+  )
+}
+
+/**
+ * First launch of a client app: copy this context's session partitions from
+ * the main app's storage so existing logins carry over. Copies only; the main
+ * app's data is never touched. From then on the two stores are independent.
+ */
+function ensureClientPartitions(): void {
+  if (!clientContextId || !mainAppUserData) return
+  const destRoot = join(app.getPath('userData'), 'Partitions')
+  if (existsSync(destRoot)) return
+  const srcRoot = join(mainAppUserData, 'Partitions')
+  if (!existsSync(srcRoot)) return
+  mkdirSync(destRoot, { recursive: true })
+  for (const dir of readdirSync(srcRoot)) {
+    if (dir.includes(`ctx-${clientContextId}`)) {
+      try {
+        cpSync(join(srcRoot, dir), join(destRoot, dir), { recursive: true })
+      } catch {
+        // A partially copied partition just means that app asks to log in again.
+      }
+    }
+  }
+}
 
 interface WindowState {
   bounds?: Rectangle
@@ -117,29 +158,78 @@ app.on('web-contents-created', (_event, contents) => {
   })
 })
 
-app.whenReady().then(() => {
-  ipcMain.handle('state:load', (): AppState | null => readJson<AppState | null>(APP_STATE_FILE, null))
+function loadState(): AppState | null {
+  if (!clientContextId) return readJson<AppState | null>(APP_STATE_FILE, null)
 
-  ipcMain.handle('state:save', (_event, state: AppState): void => {
-    writeJson(APP_STATE_FILE, state)
+  // Client mode: contexts/apps come from the main app's state file (read
+  // only); only the active app selection is remembered per client.
+  const shared = mainAppUserData
+    ? readJsonFile<AppState | null>(join(mainAppUserData, APP_STATE_FILE), null)
+    : null
+  const context = shared?.contexts.find((c) => c.id === clientContextId) ?? {
+    id: clientContextId,
+    name: clientContextName,
+    color: '#60a5fa',
+    apps: []
+  }
+  const own = readJson<{ activeApp?: ActiveApp | null }>(CLIENT_STATE_FILE, {})
+  const activeApp =
+    own.activeApp &&
+    own.activeApp.contextId === clientContextId &&
+    context.apps.some((a) => a.id === own.activeApp?.appId)
+      ? own.activeApp
+      : null
+  return { contexts: [context], activeApp, expanded: [clientContextId] }
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
   })
 
-  // Wipe every trace of an app instance's session when it is removed.
-  ipcMain.handle('partition:clear', async (_event, partition: string): Promise<void> => {
-    if (!partition.startsWith('persist:')) return
-    const ses = session.fromPartition(partition)
-    await ses.clearStorageData()
-    await ses.clearCache()
-    await ses.clearAuthCache()
-  })
+  app.whenReady().then(() => {
+    ensureClientPartitions()
 
-  createWindow()
+    ipcMain.handle('state:load', (): AppState | null => loadState())
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    ipcMain.handle('state:save', (_event, state: AppState): void => {
+      if (clientContextId) {
+        writeJson(CLIENT_STATE_FILE, { activeApp: state.activeApp })
+      } else {
+        writeJson(APP_STATE_FILE, state)
+      }
+    })
+
+    // Wipe every trace of an app instance's session when it is removed.
+    ipcMain.handle('partition:clear', async (_event, partition: string): Promise<void> => {
+      if (!partition.startsWith('persist:')) return
+      const ses = session.fromPartition(partition)
+      await ses.clearStorageData()
+      await ses.clearCache()
+      await ses.clearAuthCache()
+    })
+
+    ipcMain.handle('dockapp:create', (_event, request: DockAppRequest) => {
+      const result = createDockApp(request)
+      if (result.ok && result.path) shell.showItemInFolder(result.path)
+      return result
+    })
+
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
-})
+}
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // A client Dock app behaves like a document app: closing its window quits it.
+  if (clientContextId || process.platform !== 'darwin') app.quit()
 })

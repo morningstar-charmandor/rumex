@@ -12,6 +12,9 @@ const api: Api = {
   loadState: () => ipcRenderer.invoke('state:load') as Promise<AppState | null>,
   saveState: (state) => ipcRenderer.invoke('state:save', state) as Promise<void>,
   clearPartition: (partition) => ipcRenderer.invoke('partition:clear', partition) as Promise<void>,
+  createDockApp: (request) => ipcRenderer.invoke('dockapp:create', request),
+  clientContextId: process.env['CW_CONTEXT_ID'] ?? null,
+  testDockApp: process.env['CW_TEST_DOCKAPP'] === '1',
   platform: process.platform,
   userAgent
 }

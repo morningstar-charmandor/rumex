@@ -30,6 +30,12 @@ Keyboard shortcuts (since there is no browser chrome):
 | `Cmd/Ctrl + [` | Back |
 | `Cmd/Ctrl + ]` | Forward |
 
+## Per-context Dock apps (macOS)
+
+Hover a context in the sidebar and click the **Add to Dock** icon: ContextWorkspace generates a real Mac app for that context in `~/Applications/ContextWorkspace Apps/` — own Dock tile, own name, own icon (pick an emoji, or keep the letter tile in the context color). Opening it shows a window with only that context's apps.
+
+How it works: the wrapper is an APFS copy-on-write clone of the app bundle (near-zero disk cost) whose app payload is a stub that pins `CW_CONTEXT_ID` and delegates to the real main entry. Client apps run with their own data directory (`~/Library/Application Support/ContextWorkspace-Clients/<contextId>`); on first launch the context's session partitions are **copied** from the main app so logins carry over. From then on the two stores are independent. (A symlinked `Contents/Frameworks` does not work — Electron SIGTRAPs on startup — hence the clone.)
+
 ## Persistence
 
 - `app-state.json` — contexts, apps, last active app (in Electron's `userData` dir)

@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import type { ActiveApp, AppState } from '../../shared/types'
 import { partitionFor } from '../../shared/types'
 import type { WebviewElement } from './env'
+import { renderIconPngBase64 } from './dockIcon'
 import Sidebar from './components/Sidebar'
 import Workspace from './components/Workspace'
 
@@ -267,6 +268,44 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  const createDockApp = useCallback(
+    async (contextId: string, emoji: string | null) => {
+      const context = state?.contexts.find((c) => c.id === contextId)
+      if (!context) return
+      const iconPngBase64 = renderIconPngBase64({
+        emoji,
+        letter: context.name.charAt(0) || 'C',
+        color: context.color
+      })
+      const result = await window.api.createDockApp({
+        contextId,
+        contextName: context.name,
+        iconPngBase64
+      })
+      if (!result.ok) {
+        window.alert(`Could not create the Dock app: ${result.error}`)
+      }
+    },
+    [state]
+  )
+
+  // Client mode: the window title carries the context name.
+  useEffect(() => {
+    if (window.api.clientContextId && state?.contexts[0]) {
+      document.title = state.contexts[0].name
+    }
+  }, [state?.contexts])
+
+  // Dev/test hook (CW_TEST_DOCKAPP=1): exercise the full creation path once.
+  const testFired = useRef(false)
+  useEffect(() => {
+    if (!state || testFired.current || !window.api.testDockApp) return
+    const first = state.contexts[0]
+    if (!first) return
+    testFired.current = true
+    void createDockApp(first.id, '🚀')
+  }, [state, createDockApp])
+
   if (!state) {
     return <div className="h-full bg-zinc-950" />
   }
@@ -288,6 +327,7 @@ export default function App(): JSX.Element {
         onDeleteContext={deleteContext}
         onRenameContext={renameContext}
         onRenameApp={renameApp}
+        onCreateDockApp={createDockApp}
       />
       <Workspace
         contexts={state.contexts}

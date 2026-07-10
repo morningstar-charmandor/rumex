@@ -6,14 +6,17 @@ function fileFor(name: string): string {
   return join(app.getPath('userData'), name)
 }
 
-export function readJson<T>(name: string, fallback: T): T {
+export function readJsonFile<T>(absolutePath: string, fallback: T): T {
   try {
-    const path = fileFor(name)
-    if (!existsSync(path)) return fallback
-    return JSON.parse(readFileSync(path, 'utf-8')) as T
+    if (!existsSync(absolutePath)) return fallback
+    return JSON.parse(readFileSync(absolutePath, 'utf-8')) as T
   } catch {
     return fallback
   }
+}
+
+export function readJson<T>(name: string, fallback: T): T {
+  return readJsonFile(fileFor(name), fallback)
 }
 
 export function writeJson(name: string, data: unknown): void {
