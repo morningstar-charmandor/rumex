@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain, session, screen, shell } from 'electron'
 import type { Rectangle } from 'electron'
-import { cpSync, existsSync, mkdirSync, readdirSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
-import { readJson, readJsonFile, writeJson } from './store'
+import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
 
@@ -23,6 +23,21 @@ if (clientContextId) {
     'userData',
     join(app.getPath('appData'), 'ContextWorkspace-Clients', clientContextId)
   )
+}
+
+// Google (and others) refuse sign-in from browsers that identify as embedded.
+// Strip the Electron and app tokens from the default UA so every window —
+// including OAuth popups, which don't go through the webview's useragent
+// attribute — presents as plain Chrome.
+app.userAgentFallback = app.userAgentFallback
+  .replace(/\sElectron\/\S+/i, '')
+  .replace(/\scontextworkspace\/\S+/i, '')
+
+/** The state file every process reads contexts/apps from (main app's copy). */
+function sharedStatePath(): string {
+  return clientContextId && mainAppUserData
+    ? join(mainAppUserData, APP_STATE_FILE)
+    : join(app.getPath('userData'), APP_STATE_FILE)
 }
 
 /**
@@ -201,6 +216,16 @@ if (!gotSingleInstanceLock) {
     ipcMain.handle('state:save', (_event, state: AppState): void => {
       if (clientContextId) {
         writeJson(CLIENT_STATE_FILE, { activeApp: state.activeApp })
+        // Merge this context's apps back into the shared state file so
+        // changes made in a client app appear in the main app too.
+        const shared = readJsonFile<AppState | null>(sharedStatePath(), null)
+        const mine = state.contexts.find((c) => c.id === clientContextId)
+        if (shared && mine) {
+          const contexts = shared.contexts.some((c) => c.id === clientContextId)
+            ? shared.contexts.map((c) => (c.id === clientContextId ? mine : c))
+            : [...shared.contexts, mine]
+          writeJsonFile(sharedStatePath(), { ...shared, contexts })
+        }
       } else {
         writeJson(APP_STATE_FILE, state)
       }
@@ -222,6 +247,14 @@ if (!gotSingleInstanceLock) {
     })
 
     createWindow()
+
+    // Other processes (main app ↔ client apps) write the shared state file
+    // too; poll it and let the renderer refresh. The renderer ignores events
+    // caused by its own saves (content comparison).
+    watchFile(sharedStatePath(), { interval: 1500 }, () => {
+      const win = mainWindow
+      if (win && !win.isDestroyed()) win.webContents.send('state:external-change')
+    })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

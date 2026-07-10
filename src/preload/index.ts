@@ -13,6 +13,11 @@ const api: Api = {
   saveState: (state) => ipcRenderer.invoke('state:save', state) as Promise<void>,
   clearPartition: (partition) => ipcRenderer.invoke('partition:clear', partition) as Promise<void>,
   createDockApp: (request) => ipcRenderer.invoke('dockapp:create', request),
+  onStateExternalChange: (callback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('state:external-change', listener)
+    return () => ipcRenderer.removeListener('state:external-change', listener)
+  },
   clientContextId: process.env['CW_CONTEXT_ID'] ?? null,
   testDockApp: process.env['CW_TEST_DOCKAPP'] === '1',
   platform: process.platform,

@@ -19,8 +19,11 @@ export function readJson<T>(name: string, fallback: T): T {
   return readJsonFile(fileFor(name), fallback)
 }
 
+export function writeJsonFile(absolutePath: string, data: unknown): void {
+  mkdirSync(dirname(absolutePath), { recursive: true })
+  writeFileSync(absolutePath, JSON.stringify(data, null, 2))
+}
+
 export function writeJson(name: string, data: unknown): void {
-  const path = fileFor(name)
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify(data, null, 2))
+  writeJsonFile(fileFor(name), data)
 }

@@ -67,6 +67,32 @@ export default function App(): JSX.Element {
     return () => clearTimeout(saveTimer.current)
   }, [state])
 
+  // Another process (main app ↔ client Dock apps) changed the shared state:
+  // adopt its contexts, keep the local selection when it still exists. Events
+  // caused by our own saves are no-ops because the content matches.
+  useEffect(() => {
+    return window.api.onStateExternalChange(async () => {
+      const fresh = await window.api.loadState()
+      if (!fresh) return
+      setState((current) => {
+        if (!current) return fresh
+        if (JSON.stringify(fresh.contexts) === JSON.stringify(current.contexts)) return current
+        const activeStillExists =
+          current.activeApp != null &&
+          fresh.contexts.some(
+            (c) =>
+              c.id === current.activeApp?.contextId &&
+              c.apps.some((a) => a.id === current.activeApp?.appId)
+          )
+        return {
+          ...current,
+          contexts: fresh.contexts,
+          activeApp: activeStillExists ? current.activeApp : null
+        }
+      })
+    })
+  }, [])
+
   // Chromeless navigation: Cmd/Ctrl+R reload, +Shift hard reload, Cmd/Ctrl+[ ] history.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -284,7 +310,18 @@ export default function App(): JSX.Element {
       })
       if (!result.ok) {
         window.alert(`Could not create the Dock app: ${result.error}`)
+        return
       }
+      // The Dock icon and the sidebar icon should match from now on.
+      setState((s) => {
+        if (!s) return s
+        return {
+          ...s,
+          contexts: s.contexts.map((c) =>
+            c.id === contextId ? { ...c, icon: emoji ?? undefined } : c
+          )
+        }
+      })
     },
     [state]
   )

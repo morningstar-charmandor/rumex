@@ -10,6 +10,8 @@ export interface WorkContext {
   id: string
   name: string
   color: string
+  /** Emoji chosen for this context's Dock app; shown in the sidebar too. */
+  icon?: string
   apps: WebApp[]
 }
 
@@ -42,6 +44,8 @@ export interface Api {
   saveState(state: AppState): Promise<void>
   clearPartition(partition: string): Promise<void>
   createDockApp(request: DockAppRequest): Promise<DockAppResult>
+  /** Fires when another process (main app or a client app) changed the shared state file. */
+  onStateExternalChange(callback: () => void): () => void
   /** Set when this process is a per-context Dock app; the UI shows only that context. */
   clientContextId: string | null
   /** Dev/test hook: auto-create a Dock app for the first context on launch. */

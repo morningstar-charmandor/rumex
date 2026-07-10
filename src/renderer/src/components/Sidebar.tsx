@@ -139,10 +139,11 @@ function AddAppForm(props: {
 function DockAppForm(props: {
   color: string
   letter: string
+  initialEmoji?: string
   onSubmit(emoji: string | null): void
   onCancel(): void
 }): JSX.Element {
-  const [emoji, setEmoji] = useState('')
+  const [emoji, setEmoji] = useState(props.initialEmoji ?? '')
   return (
     <div
       className="ml-4 flex flex-col gap-1.5 rounded-md bg-zinc-900 p-2 ring-1 ring-zinc-800"
@@ -205,7 +206,9 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
       {/* Title strip doubles as the window drag region */}
       <div className={`drag flex items-center px-4 ${isMac ? 'h-12 pl-20' : 'h-11'}`}>
         <span className="truncate text-[13px] font-semibold tracking-wide text-zinc-400">
-          {clientMode ? (props.contexts[0]?.name ?? 'Workspace') : 'ContextWorkspace'}
+          {clientMode
+            ? `${props.contexts[0]?.icon ? `${props.contexts[0].icon} ` : ''}${props.contexts[0]?.name ?? 'Workspace'}`
+            : 'ContextWorkspace'}
         </span>
       </div>
 
@@ -268,10 +271,16 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           : 'Click to collapse/expand · double-click to rename'
                       }
                     >
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: context.color }}
-                      />
+                      {context.icon ? (
+                        <span className="w-4 shrink-0 text-center text-[13px] leading-none">
+                          {context.icon}
+                        </span>
+                      ) : (
+                        <span
+                          className="mx-1 h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: context.color }}
+                        />
+                      )}
                       <span className="truncate text-[13px] font-medium text-zinc-300">
                         {context.name}
                       </span>
@@ -284,20 +293,20 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                         <path d="M6 4l4 4-4 4z" />
                       </svg>
                     </button>
+                    <button
+                      onClick={() => {
+                        setAddingAppTo(context.id)
+                        if (!isExpanded) props.onToggleExpanded(context.id)
+                      }}
+                      title="Add app"
+                      className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
+                    >
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
+                        <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
+                      </svg>
+                    </button>
                     {!clientMode && (
                       <>
-                        <button
-                          onClick={() => {
-                            setAddingAppTo(context.id)
-                            if (!isExpanded) props.onToggleExpanded(context.id)
-                          }}
-                          title="Add app"
-                          className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
-                        >
-                          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
-                            <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
-                          </svg>
-                        </button>
                         {isMac && (
                           <button
                             onClick={() => {
@@ -334,6 +343,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     <DockAppForm
                       color={context.color}
                       letter={context.name.charAt(0) || 'C'}
+                      initialEmoji={context.icon}
                       onSubmit={(emoji) => {
                         props.onCreateDockApp(context.id, emoji)
                         setDockAppFor(null)
@@ -367,13 +377,10 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                             <button
                               onClick={() => props.onSelectApp(context.id, webApp.id)}
                               onDoubleClick={() =>
-                                !clientMode &&
                                 setRenaming({ kind: 'app', contextId: context.id, appId: webApp.id })
                               }
                               className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                              title={
-                                clientMode ? webApp.url : `${webApp.url} · double-click to rename`
-                              }
+                              title={`${webApp.url} · double-click to rename`}
                             >
                               <span
                                 className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-zinc-950"
@@ -389,17 +396,15 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                                 {webApp.name}
                               </span>
                             </button>
-                            {!clientMode && (
-                              <button
-                                onClick={() => props.onDeleteApp(context.id, webApp.id)}
-                                title="Remove app and wipe its session"
-                                className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-red-400 group-hover:flex"
-                              >
-                                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
-                                  <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
-                                </svg>
-                              </button>
-                            )}
+                            <button
+                              onClick={() => props.onDeleteApp(context.id, webApp.id)}
+                              title="Remove app and wipe its session"
+                              className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-red-400 group-hover:flex"
+                            >
+                              <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
+                                <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
+                              </svg>
+                            </button>
                           </>
                         )}
                       </div>
@@ -416,7 +421,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     />
                   )}
 
-                  {!clientMode && context.apps.length === 0 && addingAppTo !== context.id && (
+                  {context.apps.length === 0 && addingAppTo !== context.id && (
                     <button
                       onClick={() => setAddingAppTo(context.id)}
                       className="ml-4 w-[calc(100%-1rem)] rounded-md px-2 py-1.5 text-left text-[12px] text-zinc-600 hover:bg-zinc-900 hover:text-zinc-400"
