@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
-import type { ActiveApp, AppState } from '../../shared/types'
+import type { ActiveApp, AppState, Theme } from '../../shared/types'
 import { partitionFor } from '../../shared/types'
 import type { WebviewElement } from './env'
 import { renderIconPngBase64 } from './dockIcon'
@@ -393,6 +393,27 @@ export default function App(): JSX.Element {
     [state]
   )
 
+  // Apply the theme to the root: toggle the `.dark` class from the chosen
+  // theme, following the OS when set to "system".
+  const theme = state?.theme ?? 'system'
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = (): void => {
+      const dark = theme === 'dark' || (theme === 'system' && media.matches)
+      document.documentElement.classList.toggle('dark', dark)
+    }
+    apply()
+    if (theme === 'system') {
+      media.addEventListener('change', apply)
+      return () => media.removeEventListener('change', apply)
+    }
+    return undefined
+  }, [theme])
+
+  const setTheme = useCallback((next: Theme) => {
+    setState((s) => (s ? { ...s, theme: next } : s))
+  }, [])
+
   // Client mode: the window title carries the context name.
   useEffect(() => {
     if (window.api.clientContextId && state?.contexts[0]) {
@@ -411,11 +432,11 @@ export default function App(): JSX.Element {
   }, [state, createDockApp])
 
   if (!state) {
-    return <div className="h-full bg-zinc-950" />
+    return <div className="h-full bg-white dark:bg-zinc-950" />
   }
 
   return (
-    <div className="flex h-full bg-zinc-950 text-zinc-200">
+    <div className="flex h-full bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
       <Sidebar
         contexts={state.contexts}
         activeApp={state.activeApp}
@@ -433,6 +454,8 @@ export default function App(): JSX.Element {
         onRenameApp={renameApp}
         onCreateDockApp={createDockApp}
         onSetContextIcon={setContextIcon}
+        theme={theme}
+        onSetTheme={setTheme}
       />
       <Workspace
         contexts={state.contexts}

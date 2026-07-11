@@ -1,10 +1,22 @@
 @import 'tailwindcss';
 
+/* Drive the `dark:` variant from a `.dark` class on the root (toggled by the
+   theme switcher) instead of the OS media query, so Light/Dark/System all work. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 html,
 body,
 #root {
   height: 100%;
   overflow: hidden;
+}
+
+/* App background follows the theme; prevents a flash between panels. */
+html {
+  background: #ffffff;
+}
+html.dark {
+  background: #09090b;
 }
 
 body {

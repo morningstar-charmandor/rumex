@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
+import type { ActiveApp, Theme, WebApp, WorkContext } from '../../../shared/types'
 import { buildSuggestions } from '../catalog'
 import type { NavAction } from '../App'
 
@@ -24,6 +24,65 @@ interface SidebarProps {
     contextId: string,
     next: { emoji?: string | null; image?: string | null }
   ): void
+  theme: Theme
+  onSetTheme(theme: Theme): void
+}
+
+const THEMES: { value: Theme; label: string; icon: JSX.Element }[] = [
+  {
+    value: 'light',
+    label: 'Light',
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round">
+        <circle cx="8" cy="8" r="3" />
+        <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M13 3l-1 1M4 12l-1 1" />
+      </svg>
+    )
+  },
+  {
+    value: 'dark',
+    label: 'Dark',
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" />
+      </svg>
+    )
+  },
+  {
+    value: 'system',
+    label: 'Auto',
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="12" height="8" rx="1" />
+        <path d="M6 13.5h4M8 11v2.5" />
+      </svg>
+    )
+  }
+]
+
+function ThemeSwitcher(props: { theme: Theme; onSet(theme: Theme): void }): JSX.Element {
+  return (
+    <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
+      {THEMES.map((t) => {
+        const active = props.theme === t.value
+        return (
+          <button
+            key={t.value}
+            onClick={() => props.onSet(t.value)}
+            title={t.label}
+            className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[11px] font-medium transition-colors ${
+              active
+                ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 type Renaming = { kind: 'context'; contextId: string } | { kind: 'app'; contextId: string; appId: string }
@@ -39,7 +98,7 @@ function NavButton(props: {
       onClick={props.onClick}
       disabled={props.disabled}
       title={props.title}
-      className="no-drag flex h-6 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-30"
+      className="no-drag flex h-6 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:pointer-events-none disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
     >
       {props.children}
     </button>
@@ -66,7 +125,7 @@ function InlineInput(props: {
       }}
       onBlur={props.onCancel}
       onClick={(e) => e.stopPropagation()}
-      className="w-full min-w-0 rounded-md bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
+      className="w-full min-w-0 rounded-md bg-zinc-200 px-2 py-1 text-[13px] text-zinc-900 placeholder-zinc-500 outline-none ring-1 ring-zinc-300 focus:ring-zinc-400 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:ring-zinc-500"
     />
   )
 }
@@ -87,7 +146,7 @@ function AddAppForm(props: {
 
   return (
     <div
-      className="ml-4 flex flex-col gap-1 rounded-md bg-zinc-900 p-2 ring-1 ring-zinc-800"
+      className="ml-4 flex flex-col gap-1 rounded-md bg-zinc-100 p-2 ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800"
       onKeyDown={(e) => {
         if (e.key === 'Escape') props.onCancel()
       }}
@@ -111,7 +170,7 @@ function AddAppForm(props: {
             props.onSubmit(selected.name, selected.url, selected.autoNamed)
           }
         }}
-        className="rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
+        className="rounded bg-zinc-200 px-2 py-1 text-[13px] text-zinc-900 placeholder-zinc-500 outline-none ring-1 ring-zinc-300 focus:ring-zinc-400 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:ring-zinc-500"
       />
       <div className="flex flex-col">
         {suggestions.map((s, i) => (
@@ -123,15 +182,15 @@ function AddAppForm(props: {
               props.onSubmit(s.name, s.url, s.autoNamed)
             }}
             className={`flex items-baseline gap-2 rounded px-2 py-1 text-left ${
-              i === highlight ? 'bg-zinc-800' : ''
+              i === highlight ? 'bg-zinc-200 dark:bg-zinc-800' : ''
             }`}
           >
-            <span className="truncate text-[13px] text-zinc-200">{s.name}</span>
+            <span className="truncate text-[13px] text-zinc-700 dark:text-zinc-200">{s.name}</span>
             <span className="ml-auto shrink-0 text-[11px] text-zinc-500">{s.hint}</span>
           </button>
         ))}
         {suggestions.length === 0 && (
-          <span className="px-2 py-1 text-[12px] text-zinc-600">
+          <span className="px-2 py-1 text-[12px] text-zinc-400 dark:text-zinc-600">
             Keep typing, or paste a full URL
           </span>
         )}
@@ -189,7 +248,7 @@ function ContextIconPicker(props: {
   const appIcons = props.context.apps.filter((a) => a.favicon)
   return (
     <div
-      className="absolute left-2 top-9 z-30 w-56 rounded-lg border border-zinc-800 bg-zinc-900 p-2 shadow-xl"
+      className="absolute left-2 top-9 z-30 w-56 rounded-lg border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
       onKeyDown={(e) => e.key === 'Escape' && props.onClose()}
     >
       <p className="px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
@@ -206,7 +265,7 @@ function ContextIconPicker(props: {
             props.onClose()
           }
         }}
-        className="w-full rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
+        className="w-full rounded bg-zinc-200 px-2 py-1 text-[13px] text-zinc-900 placeholder-zinc-500 outline-none ring-1 ring-zinc-300 focus:ring-zinc-400 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:ring-zinc-500"
       />
       <p className="px-1 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
         Use an app icon
@@ -221,28 +280,30 @@ function ContextIconPicker(props: {
                 props.onSet({ image: a.favicon })
                 props.onClose()
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-md ring-1 ring-zinc-700 hover:ring-zinc-500"
+              className="flex h-8 w-8 items-center justify-center rounded-md ring-1 ring-zinc-300 hover:ring-zinc-400 dark:ring-zinc-700 dark:hover:ring-zinc-500"
             >
               <img src={a.favicon} alt={a.name} className="h-5 w-5 rounded" />
             </button>
           ))}
         </div>
       ) : (
-        <p className="px-1 text-[12px] text-zinc-600">Open an app to load its icon.</p>
+        <p className="px-1 text-[12px] text-zinc-400 dark:text-zinc-600">
+          Open an app to load its icon.
+        </p>
       )}
-      <div className="mt-2 flex justify-between border-t border-zinc-800 pt-2">
+      <div className="mt-2 flex justify-between border-t border-zinc-200 pt-2 dark:border-zinc-800">
         <button
           onClick={() => {
             props.onSet({ emoji: null, image: null })
             props.onClose()
           }}
-          className="rounded px-2 py-0.5 text-[12px] text-zinc-400 hover:bg-zinc-800"
+          className="rounded px-2 py-0.5 text-[12px] text-zinc-500 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800"
         >
           Reset
         </button>
         <button
           onClick={props.onClose}
-          className="rounded px-2 py-0.5 text-[12px] text-zinc-400 hover:bg-zinc-800"
+          className="rounded px-2 py-0.5 text-[12px] text-zinc-500 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800"
         >
           Done
         </button>
@@ -265,10 +326,10 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
     renaming?.kind === 'app' && renaming.contextId === contextId && renaming.appId === appId
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950">
+    <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800/80 dark:bg-zinc-950">
       {/* Title strip doubles as the window drag region */}
       <div className={`drag flex items-center px-4 ${isMac ? 'h-12 pl-20' : 'h-11'}`}>
-        <span className="truncate text-[13px] font-semibold tracking-wide text-zinc-400">
+        <span className="truncate text-[13px] font-semibold tracking-wide text-zinc-500 dark:text-zinc-400">
           {clientMode
             ? `${props.contexts[0]?.icon ? `${props.contexts[0].icon} ` : ''}${props.contexts[0]?.name ?? 'Workspace'}`
             : 'ContextWorkspace'}
@@ -276,7 +337,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
       </div>
 
       {props.activeApp && (
-        <div className="flex items-center gap-0.5 border-b border-zinc-800/80 px-3 pb-2">
+        <div className="flex items-center gap-0.5 border-b border-zinc-200 px-3 pb-2 dark:border-zinc-800/80">
           <NavButton
             title="Back (⌘[)"
             disabled={!props.canGoBack}
@@ -309,7 +370,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
           const isExpanded = props.expanded.includes(context.id)
           return (
             <div key={context.id}>
-              <div className="group relative flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-zinc-900">
+              <div className="group relative flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900">
                 {isRenamingContext(context.id) ? (
                   <InlineInput
                     placeholder="Context name"
@@ -329,7 +390,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                       }
                       title={clientMode ? undefined : 'Change icon'}
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${
-                        clientMode ? 'cursor-default' : 'hover:bg-zinc-800'
+                        clientMode ? 'cursor-default' : 'hover:bg-zinc-200 dark:hover:bg-zinc-800'
                       }`}
                     >
                       <ContextIcon context={context} />
@@ -346,12 +407,12 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           : 'Click to collapse/expand · double-click to rename'
                       }
                     >
-                      <span className="truncate text-[13px] font-medium text-zinc-300">
+                      <span className="truncate text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
                         {context.name}
                       </span>
                       <svg
                         viewBox="0 0 16 16"
-                        className={`h-3 w-3 shrink-0 fill-zinc-600 transition-transform ${
+                        className={`h-3 w-3 shrink-0 fill-zinc-400 transition-transform dark:fill-zinc-600 ${
                           isExpanded ? 'rotate-90' : ''
                         }`}
                       >
@@ -364,7 +425,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                         if (!isExpanded) props.onToggleExpanded(context.id)
                       }}
                       title="Add app"
-                      className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
+                      className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                     >
                       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
                         <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
@@ -376,7 +437,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           <button
                             onClick={() => props.onCreateDockApp(context.id)}
                             title="Add to Dock as its own app (uses this context's icon)"
-                            className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
+                            className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                           >
                             <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                               <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
@@ -387,7 +448,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                         <button
                           onClick={() => props.onDeleteContext(context.id)}
                           title="Delete context"
-                          className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-red-400 group-hover:flex"
+                          className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-red-500 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-red-400"
                         >
                           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
                             <path d="M6.5 2h3l.5 1H13v1.5H3V3h3zM4 6h8l-.6 8H4.6z" />
@@ -416,7 +477,9 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                       <div
                         key={webApp.id}
                         className={`group ml-4 flex items-center gap-2 rounded-md px-2 py-1.5 ${
-                          isActive ? 'bg-zinc-800/90' : 'hover:bg-zinc-900'
+                          isActive
+                            ? 'bg-zinc-200 dark:bg-zinc-800/90'
+                            : 'hover:bg-zinc-100 dark:hover:bg-zinc-900'
                         }`}
                       >
                         {isRenamingApp(context.id, webApp.id) ? (
@@ -442,7 +505,9 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                               <AppIcon app={webApp} color={context.color} />
                               <span
                                 className={`truncate text-[13px] ${
-                                  isActive ? 'text-zinc-100' : 'text-zinc-400'
+                                  isActive
+                                    ? 'text-zinc-900 dark:text-zinc-100'
+                                    : 'text-zinc-600 dark:text-zinc-400'
                                 }`}
                               >
                                 {webApp.name}
@@ -451,7 +516,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                             <button
                               onClick={() => props.onDeleteApp(context.id, webApp.id)}
                               title="Remove app and wipe its session"
-                              className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-red-400 group-hover:flex"
+                              className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-300 hover:text-red-500 group-hover:flex dark:hover:bg-zinc-700 dark:hover:text-red-400"
                             >
                               <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
                                 <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
@@ -476,7 +541,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                   {context.apps.length === 0 && addingAppTo !== context.id && (
                     <button
                       onClick={() => setAddingAppTo(context.id)}
-                      className="ml-4 w-[calc(100%-1rem)] rounded-md px-2 py-1.5 text-left text-[12px] text-zinc-600 hover:bg-zinc-900 hover:text-zinc-400"
+                      className="ml-4 w-[calc(100%-1rem)] rounded-md px-2 py-1.5 text-left text-[12px] text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-400"
                     >
                       + Add an app…
                     </button>
@@ -488,24 +553,26 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
         })}
       </nav>
 
-      <div className={`border-t border-zinc-800/80 p-2 ${clientMode ? 'hidden' : ''}`}>
-        {addingContext ? (
-          <InlineInput
-            placeholder="Context name (e.g. Client A)"
-            onSubmit={(name) => {
-              props.onAddContext(name)
-              setAddingContext(false)
-            }}
-            onCancel={() => setAddingContext(false)}
-          />
-        ) : (
-          <button
-            onClick={() => setAddingContext(true)}
-            className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
-          >
-            + New Context
-          </button>
-        )}
+      <div className="flex flex-col gap-2 border-t border-zinc-200 p-2 dark:border-zinc-800/80">
+        {!clientMode &&
+          (addingContext ? (
+            <InlineInput
+              placeholder="Context name (e.g. Client A)"
+              onSubmit={(name) => {
+                props.onAddContext(name)
+                setAddingContext(false)
+              }}
+              onCancel={() => setAddingContext(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setAddingContext(true)}
+              className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
+            >
+              + New Context
+            </button>
+          ))}
+        <ThemeSwitcher theme={props.theme} onSet={props.onSetTheme} />
       </div>
     </aside>
   )

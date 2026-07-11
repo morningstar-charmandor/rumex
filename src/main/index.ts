@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, screen, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, session, screen, shell, nativeTheme } from 'electron'
 import type { Rectangle } from 'electron'
 import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
@@ -108,7 +108,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#09090b',
+    backgroundColor: initialBackgroundColor(),
     title: 'ContextWorkspace',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 13 },
@@ -289,6 +289,14 @@ async function resolveFavicon(pageUrl: string): Promise<string | null> {
   return toImageDataUri(`https://www.google.com/s2/favicons?domain=${host}&sz=64`)
 }
 
+/** Window background matching the persisted theme, to avoid a flash on launch. */
+function initialBackgroundColor(): string {
+  const state = readJsonFile<AppState | null>(sharedStatePath(), null)
+  const theme = state?.theme ?? 'system'
+  const dark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
+  return dark ? '#09090b' : '#ffffff'
+}
+
 function loadState(): AppState | null {
   if (!clientContextId) return readJson<AppState | null>(APP_STATE_FILE, null)
 
@@ -310,7 +318,8 @@ function loadState(): AppState | null {
     context.apps.some((a) => a.id === own.activeApp?.appId)
       ? own.activeApp
       : null
-  return { contexts: [context], activeApp, expanded: [clientContextId] }
+  // Client apps follow the theme chosen in the main app.
+  return { contexts: [context], activeApp, expanded: [clientContextId], theme: shared?.theme }
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()

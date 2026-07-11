@@ -24,10 +24,13 @@ export interface ActiveApp {
   appId: string
 }
 
+export type Theme = 'light' | 'dark' | 'system'
+
 export interface AppState {
   contexts: WorkContext[]
   activeApp: ActiveApp | null
   expanded: string[]
+  theme?: Theme
 }
 
 export interface DockAppRequest {

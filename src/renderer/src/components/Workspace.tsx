@@ -115,7 +115,7 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
     : null
 
   return (
-    <main className="relative min-w-0 flex-1 bg-zinc-900">
+    <main className="relative min-w-0 flex-1 bg-zinc-100 dark:bg-zinc-900">
       {instances.map(({ context, webApp }) => (
         <AppView
           key={appKey(context.id, webApp.id)}
@@ -129,16 +129,16 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
 
       {!activeKey && (
         <div className="drag flex h-full flex-col items-center justify-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-800/70 ring-1 ring-zinc-700/50">
-            <svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-zinc-500" strokeWidth="1.5">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-200/70 ring-1 ring-zinc-300/60 dark:bg-zinc-800/70 dark:ring-zinc-700/50">
+            <svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-zinc-400 dark:stroke-zinc-500" strokeWidth="1.5">
               <rect x="3" y="4" width="18" height="16" rx="2" />
               <path d="M9 4v16M3 9h6" />
             </svg>
           </div>
-          <p className="text-[13px] text-zinc-500">
+          <p className="text-[13px] text-zinc-500 dark:text-zinc-500">
             Select an app from the sidebar, or create a context to get started.
           </p>
-          <p className="text-[12px] text-zinc-600">
+          <p className="text-[12px] text-zinc-400 dark:text-zinc-600">
             Every app instance runs in its own isolated session — no shared cookies, ever.
           </p>
         </div>
