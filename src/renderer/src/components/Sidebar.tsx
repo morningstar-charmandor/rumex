@@ -529,13 +529,18 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                               >
                                 {webApp.name}
                               </span>
-                              {webApp.neverSleep && (
+              {webApp.neverSleep && (
                                 <svg
                                   viewBox="0 0 16 16"
-                                  className="h-3 w-3 shrink-0 fill-zinc-400 dark:fill-zinc-500"
-                                  aria-label="Never sleeps"
+                                  className="h-3 w-3 shrink-0 fill-none stroke-zinc-400 dark:stroke-zinc-500"
+                                  strokeWidth="1.3"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-label="Kept awake"
                                 >
-                                  <path d="M8 1.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 11.7l-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" />
+                                  <path d="M2.75 6.5h8v3a3 3 0 0 1-3 3h-2a3 3 0 0 1-3-3z" />
+                                  <path d="M10.75 7.25H12a1.5 1.5 0 0 1 0 3h-1.25" />
+                                  <path d="M5 2.4c0 .8-.6 1-.6 1.9M8 2.4c0 .8-.6 1-.6 1.9" />
                                 </svg>
                               )}
                             </button>
@@ -546,15 +551,21 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                             <div className="hidden shrink-0 items-center group-hover:flex">
                               <button
                                 onClick={() => props.onToggleNeverSleep(context.id, webApp.id)}
-                                title={webApp.neverSleep ? 'Allow sleeping' : 'Never sleep this app'}
+                                title={
+                                  webApp.neverSleep
+                                    ? 'Kept awake — allow sleeping'
+                                    : 'Keep awake (never sleep)'
+                                }
                                 className={`flex h-5 w-5 items-center justify-center rounded hover:bg-zinc-300 dark:hover:bg-zinc-700 ${
                                   webApp.neverSleep
                                     ? 'text-amber-500'
                                     : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200'
                                 }`}
                               >
-                                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
-                                  <path d="M8 1.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 11.7l-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" />
+                                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M2.75 6.5h8v3a3 3 0 0 1-3 3h-2a3 3 0 0 1-3-3z" />
+                                  <path d="M10.75 7.25H12a1.5 1.5 0 0 1 0 3h-1.25" />
+                                  <path d="M5 2.4c0 .8-.6 1-.6 1.9M8 2.4c0 .8-.6 1-.6 1.9" />
                                 </svg>
                               </button>
                               {awake && (
