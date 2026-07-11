@@ -272,8 +272,8 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                       }
                     >
                       {context.icon ? (
-                        <span className="w-4 shrink-0 text-center text-[13px] leading-none">
-                          {context.icon}
+                        <span className="w-4 shrink-0 overflow-hidden text-center text-[13px] leading-none">
+                          {[...context.icon].slice(0, 2).join('')}
                         </span>
                       ) : (
                         <span

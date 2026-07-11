@@ -53,6 +53,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     window.api.loadState().then((saved) => {
       const next = saved ?? seedState()
+      // Repair icons saved before the one-grapheme clamp existed.
+      next.contexts = next.contexts.map((c) =>
+        c.icon && [...c.icon].length > 2 ? { ...c, icon: undefined } : c
+      )
       setState(next)
       if (next.activeApp) {
         setOpenedKeys(new Set([appKey(next.activeApp.contextId, next.activeApp.appId)]))
@@ -295,9 +299,14 @@ export default function App(): JSX.Element {
   }, [])
 
   const createDockApp = useCallback(
-    async (contextId: string, emoji: string | null) => {
+    async (contextId: string, emojiInput: string | null) => {
       const context = state?.contexts.find((c) => c.id === contextId)
       if (!context) return
+      // The icon slot holds exactly one grapheme; typing a whole word into
+      // the emoji field must not overflow the sidebar.
+      const emoji = emojiInput
+        ? ([...new Intl.Segmenter().segment(emojiInput.trim())][0]?.segment ?? null)
+        : null
       const iconPngBase64 = renderIconPngBase64({
         emoji,
         letter: context.name.charAt(0) || 'C',

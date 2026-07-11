@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
-import { partitionFor } from '../../../shared/types'
+import { FIREFOX_UA, isGoogleUrl, partitionFor } from '../../../shared/types'
 import { cleanTitle } from '../catalog'
 import { appKey } from '../App'
 
@@ -79,7 +79,7 @@ function AppView(props: {
         src={props.webApp.url}
         partition={partitionFor(props.context.id, props.webApp.id)}
         allowpopups={'true' as unknown as boolean}
-        useragent={window.api.userAgent}
+        useragent={isGoogleUrl(props.webApp.url) ? FIREFOX_UA : window.api.userAgent}
       />
       {props.active && loading && (
         <div className="pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden">

@@ -55,6 +55,26 @@ export interface Api {
 }
 
 /**
+ * Google rejects sign-in from browsers it can identify as embedded, and
+ * cross-checks a claimed Chrome against real-Chrome-only signals. Presenting
+ * as Firefox — which claims none of those signals — is the approach proven by
+ * Ferdium/Rambox. Google-domain apps use this UA wholesale so headers and
+ * navigator.userAgent agree from the very first document.
+ */
+export const FIREFOX_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.0) Gecko/20100101 Firefox/141.0'
+
+const GOOGLE_HOSTS = /(^|\.)(google|youtube)\.com$/
+
+export function isGoogleUrl(url: string): boolean {
+  try {
+    return GOOGLE_HOSTS.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Every app instance gets its own persistent Electron session partition.
  * Two apps never share a partition, so cookies, localStorage, indexedDB
  * and cache are fully isolated between contexts (and between apps).

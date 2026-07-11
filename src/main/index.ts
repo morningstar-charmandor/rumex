@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
+import { FIREFOX_UA, isGoogleUrl } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
 
 const APP_STATE_FILE = 'app-state.json'
@@ -25,13 +26,15 @@ if (clientContextId) {
   )
 }
 
-// Google (and others) refuse sign-in from browsers that identify as embedded.
-// Strip the Electron and app tokens from the default UA so every window —
-// including OAuth popups, which don't go through the webview's useragent
-// attribute — presents as plain Chrome.
-app.userAgentFallback = app.userAgentFallback
+// Default UA for any window without an explicit one: plain Chrome with the
+// Electron/app tokens stripped. Webviews override this per-element (Chrome
+// normally, Firefox for Google apps); popups inherit it at birth — which is
+// the only point a popup's navigator.userAgent can be set (see the
+// window-open handler, where it is briefly swapped to Firefox for Google).
+const CHROME_UA = app.userAgentFallback
   .replace(/\sElectron\/\S+/i, '')
   .replace(/\scontextworkspace\/\S+/i, '')
+app.userAgentFallback = CHROME_UA
 
 /** The state file every process reads contexts/apps from (main app's copy). */
 function sharedStatePath(): string {
@@ -157,78 +160,33 @@ function createWindow(): void {
   }
 }
 
-// Google refuses sign-in from anything it can identify as an embedded
-// browser. A cleaned Chrome UA is not enough: Google cross-checks the claimed
-// Chrome against real-Chrome-only signals (client-hint consistency,
-// window.chrome, …). The reliable approach — used by Ferdium/Rambox alike —
-// is to present as Firefox on Google's login pages only: Firefox claims none
-// of those signals, so there is nothing to cross-check.
-const FIREFOX_UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.0) Gecko/20100101 Firefox/141.0'
-const GOOGLE_LOGIN_HOSTS = /(^|\.)accounts\.(google|youtube)\.com$/
-
-function isGoogleLoginUrl(url: string): boolean {
-  try {
-    return GOOGLE_LOGIN_HOSTS.test(new URL(url).hostname)
-  } catch {
-    return false
-  }
-}
-
-const uaPatchedSessions = new WeakSet<Electron.Session>()
-
-/** Rewrites request headers on login pages (covers the very first request,
- * before setUserAgent can kick in) and drops Chrome client-hint headers,
- * which Firefox would never send. */
-function patchSessionForGoogleLogin(ses: Electron.Session): void {
-  if (uaPatchedSessions.has(ses)) return
-  uaPatchedSessions.add(ses)
-  ses.webRequest.onBeforeSendHeaders(
-    { urls: ['https://accounts.google.com/*', 'https://accounts.youtube.com/*'] },
-    (details, callback) => {
-      const requestHeaders = { ...details.requestHeaders }
-      requestHeaders['User-Agent'] = FIREFOX_UA
-      for (const key of Object.keys(requestHeaders)) {
-        if (key.toLowerCase().startsWith('sec-ch-ua')) delete requestHeaders[key]
-      }
-      callback({ requestHeaders })
-    }
-  )
-}
-
 app.on('web-contents-created', (_event, contents) => {
-  const type = contents.getType()
-  if (type !== 'webview' && type !== 'window') return
+  if (contents.getType() !== 'webview') return
 
-  patchSessionForGoogleLogin(contents.session)
-
-  // Popups destined for a Google login page must present as Firefox from
-  // their very first document, or Google rejects before the navigation-time
-  // switch below can kick in.
-  contents.on('did-create-window', (win, details) => {
-    if (isGoogleLoginUrl(details.url)) {
-      win.webContents.setUserAgent(FIREFOX_UA)
-    }
-  })
-
-  // Keep navigator.userAgent consistent with the headers: Firefox while on a
-  // Google login page, the normal cleaned Chrome UA everywhere else.
-  contents.on('did-start-navigation', (details) => {
-    if (!details.isMainFrame || !/^https?:/.test(details.url)) return
-    const wantsFirefox = isGoogleLoginUrl(details.url)
-    const current = contents.getUserAgent()
-    if (wantsFirefox && current !== FIREFOX_UA) {
-      contents.setUserAgent(FIREFOX_UA)
-    } else if (!wantsFirefox && current === FIREFOX_UA) {
-      contents.setUserAgent(app.userAgentFallback)
-    }
-  })
-
-  if (type !== 'webview') return
   // Popups (OAuth sign-in flows etc.) are allowed and automatically inherit
-  // the webview's isolated session partition. Anything non-http(s) is denied.
+  // the opener webview's isolated session partition. Anything non-http(s) is
+  // denied. A popup's navigator.userAgent is fixed at birth from the global
+  // userAgentFallback and cannot be rewritten afterwards, so for Google-bound
+  // popups we swap the fallback to Firefox for exactly the synchronous window
+  // in which the popup is created, then restore it. Google rejects sign-in
+  // from anything it detects as an embedded browser; Firefox has none of the
+  // Chrome-only signals it cross-checks. (Header + navigator both come from
+  // this single UA, so they stay consistent — the mismatch itself was a tell.)
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
+      if (isGoogleUrl(url)) {
+        // A popup takes its UA from the global fallback when its first
+        // navigation commits — not at construction — and it can't be
+        // rewritten afterwards. Set Firefox now and restore Chrome only once
+        // that first navigation has committed, so the restore can't revert
+        // the popup to Chrome mid-flight.
+        app.userAgentFallback = FIREFOX_UA
+        contents.once('did-create-window', (popup) => {
+          popup.webContents.once('did-navigate', () => {
+            app.userAgentFallback = CHROME_UA
+          })
+        })
+      }
       return {
         action: 'allow',
         overrideBrowserWindowOptions: { autoHideMenuBar: true, backgroundColor: '#ffffff' }
