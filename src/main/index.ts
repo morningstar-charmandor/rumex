@@ -216,6 +216,79 @@ function centeredPopupBounds(): { width: number; height: number; x?: number; y?:
   return { width, height, x, y }
 }
 
+/** Downloads a URL and returns it as an image data URI, or null. */
+async function toImageDataUri(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000), redirect: 'follow' })
+    if (!res.ok) return null
+    const type = res.headers.get('content-type') ?? 'image/png'
+    if (!type.startsWith('image/')) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length === 0 || buf.length > 512 * 1024) return null
+    return `data:${type};base64,${buf.toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
+/** Picks the best <link rel="...icon..."> href from page HTML, absolute-resolved. */
+function iconLinksFromHtml(html: string, baseUrl: string): string[] {
+  const links: { href: string; weight: number }[] = []
+  const linkTag = /<link\b[^>]*>/gi
+  let m: RegExpExecArray | null
+  while ((m = linkTag.exec(html)) !== null) {
+    const tag = m[0]
+    const rel = /\brel\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]?.toLowerCase()
+    if (!rel || !rel.includes('icon')) continue
+    const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
+    if (!href) continue
+    // Prefer higher-resolution icons: apple-touch-icon, then large sizes.
+    const sizes = /\bsizes\s*=\s*["'](\d+)/i.exec(tag)?.[1]
+    const weight =
+      (rel.includes('apple-touch') ? 1000 : 0) + (sizes ? parseInt(sizes, 10) : 0)
+    try {
+      links.push({ href: new URL(href, baseUrl).toString(), weight })
+    } catch {
+      // ignore malformed href
+    }
+  }
+  return links.sort((a, b) => b.weight - a.weight).map((l) => l.href)
+}
+
+async function resolveFavicon(pageUrl: string): Promise<string | null> {
+  if (!/^https?:\/\//i.test(pageUrl)) return null
+  let origin: string
+  let host: string
+  try {
+    const u = new URL(pageUrl)
+    origin = u.origin
+    host = u.host
+  } catch {
+    return null
+  }
+
+  // 1. Parse the page's declared icon links (best quality, matches the browser).
+  try {
+    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(6000), redirect: 'follow' })
+    if (res.ok) {
+      const html = (await res.text()).slice(0, 200_000)
+      for (const href of iconLinksFromHtml(html, res.url || pageUrl).slice(0, 4)) {
+        const data = await toImageDataUri(href)
+        if (data) return data
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // 2. The conventional /favicon.ico.
+  const ico = await toImageDataUri(`${origin}/favicon.ico`)
+  if (ico) return ico
+
+  // 3. Last resort: a favicon service (returns the site's real icon).
+  return toImageDataUri(`https://www.google.com/s2/favicons?domain=${host}&sz=64`)
+}
+
 function loadState(): AppState | null {
   if (!clientContextId) return readJson<AppState | null>(APP_STATE_FILE, null)
 
@@ -282,6 +355,12 @@ if (!gotSingleInstanceLock) {
       await ses.clearCache()
       await ses.clearAuthCache()
     })
+
+    // Favicons are resolved here (not in the renderer) so the strict renderer
+    // CSP can keep blocking remote images; the chosen icon comes back as a
+    // data URI. Given an app's page URL, try the page's declared icon links,
+    // then /favicon.ico, then a favicon service — first success wins.
+    ipcMain.handle('favicon:fetch', (_event, url: string) => resolveFavicon(url))
 
     ipcMain.handle('dockapp:create', (_event, request: DockAppRequest) => {
       const result = createDockApp(request)

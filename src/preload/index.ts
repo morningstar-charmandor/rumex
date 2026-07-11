@@ -13,6 +13,7 @@ const api: Api = {
   saveState: (state) => ipcRenderer.invoke('state:save', state) as Promise<void>,
   clearPartition: (partition) => ipcRenderer.invoke('partition:clear', partition) as Promise<void>,
   createDockApp: (request) => ipcRenderer.invoke('dockapp:create', request),
+  fetchFavicon: (url) => ipcRenderer.invoke('favicon:fetch', url) as Promise<string | null>,
   onStateExternalChange: (callback) => {
     const listener = (): void => callback()
     ipcRenderer.on('state:external-change', listener)

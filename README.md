@@ -30,6 +30,12 @@ Keyboard shortcuts (since there is no browser chrome):
 | `Cmd/Ctrl + [` | Back |
 | `Cmd/Ctrl + ]` | Forward |
 
+## Icons
+
+Apps show their **real favicon** (the icon they use in a normal browser), resolved in the main process from the app's URL (page `<link rel=icon>` → `/favicon.ico` → favicon service) and cached as a data URI, so the strict renderer CSP still blocks remote images.
+
+Click a context's leading icon to open the **icon picker**: set a custom emoji, or pick any favicon from the apps inside that context, or reset to the color dot. The chosen icon shows in the sidebar and is reused as the context's Dock-app icon (emoji rendered, or the favicon drawn onto the tile).
+
 ## Per-context Dock apps (macOS)
 
 Hover a context in the sidebar and click the **Add to Dock** icon: ContextWorkspace generates a real Mac app for that context in `~/Applications/ContextWorkspace Apps/` — own Dock tile, own name, own icon (pick an emoji, or keep the letter tile in the context color). Opening it shows a window with only that context's apps.

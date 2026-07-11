@@ -49,6 +49,9 @@ export default function App(): JSX.Element {
   // stay warm.
   const [openedKeys, setOpenedKeys] = useState<Set<string>>(new Set())
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // Mirror of the latest state for callbacks that need it without re-subscribing.
+  const stateRef = useRef<AppState | null>(null)
+  stateRef.current = state
 
   useEffect(() => {
     window.api.loadState().then((saved) => {
@@ -230,6 +233,74 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  // Resolve and store each app's real favicon once its page is ready. The
+  // main process derives the icon from the app's URL; a ref dedupes so we
+  // resolve at most once per app per session.
+  const faviconResolved = useRef<Set<string>>(new Set())
+  const captureFavicon = useCallback((contextId: string, appId: string) => {
+    const key = appKey(contextId, appId)
+    if (faviconResolved.current.has(key)) return
+    faviconResolved.current.add(key)
+    const app = stateRef.current?.contexts
+      .find((c) => c.id === contextId)
+      ?.apps.find((a) => a.id === appId)
+    if (!app) return
+    window.api.fetchFavicon(app.url).then((dataUri) => {
+      if (!dataUri) {
+        faviconResolved.current.delete(key) // allow a later retry
+        return
+      }
+      setState((s) => {
+        if (!s) return s
+        return {
+          ...s,
+          contexts: s.contexts.map((c) =>
+            c.id === contextId
+              ? { ...c, apps: c.apps.map((a) => (a.id === appId ? { ...a, favicon: dataUri } : a)) }
+              : c
+          )
+        }
+      })
+    })
+  }, [])
+
+  // On first load, resolve favicons for every app that doesn't have one yet,
+  // so all icons appear without needing to open each app.
+  const bootstrappedFavicons = useRef(false)
+  useEffect(() => {
+    if (!state || bootstrappedFavicons.current) return
+    bootstrappedFavicons.current = true
+    state.contexts.forEach((c) =>
+      c.apps.forEach((a) => {
+        if (!a.favicon) captureFavicon(c.id, a.id)
+      })
+    )
+  }, [state, captureFavicon])
+
+  const setContextIcon = useCallback(
+    (contextId: string, next: { emoji?: string | null; image?: string | null }) => {
+      setState((s) => {
+        if (!s) return s
+        return {
+          ...s,
+          contexts: s.contexts.map((c) =>
+            c.id === contextId
+              ? {
+                  ...c,
+                  // Emoji and image are mutually exclusive; setting one clears the other.
+                  icon: 'emoji' in next ? (next.emoji ?? undefined) : c.icon,
+                  iconImage: 'image' in next ? (next.image ?? undefined) : c.iconImage,
+                  ...('emoji' in next && next.emoji ? { iconImage: undefined } : {}),
+                  ...('image' in next && next.image ? { icon: undefined } : {})
+                }
+              : c
+          )
+        }
+      })
+    },
+    []
+  )
+
   // When an app was added without an explicit name, adopt the page title the
   // first time the site reports one, then leave the name alone.
   const autoNameApp = useCallback((contextId: string, appId: string, title: string) => {
@@ -299,16 +370,14 @@ export default function App(): JSX.Element {
   }, [])
 
   const createDockApp = useCallback(
-    async (contextId: string, emojiInput: string | null) => {
+    async (contextId: string) => {
       const context = state?.contexts.find((c) => c.id === contextId)
       if (!context) return
-      // The icon slot holds exactly one grapheme; typing a whole word into
-      // the emoji field must not overflow the sidebar.
-      const emoji = emojiInput
-        ? ([...new Intl.Segmenter().segment(emojiInput.trim())][0]?.segment ?? null)
-        : null
-      const iconPngBase64 = renderIconPngBase64({
-        emoji,
+      // Reuse whatever icon the context already shows: chosen favicon, then
+      // emoji, then the letter tile.
+      const iconPngBase64 = await renderIconPngBase64({
+        image: context.iconImage,
+        emoji: context.icon,
         letter: context.name.charAt(0) || 'C',
         color: context.color
       })
@@ -319,18 +388,7 @@ export default function App(): JSX.Element {
       })
       if (!result.ok) {
         window.alert(`Could not create the Dock app: ${result.error}`)
-        return
       }
-      // The Dock icon and the sidebar icon should match from now on.
-      setState((s) => {
-        if (!s) return s
-        return {
-          ...s,
-          contexts: s.contexts.map((c) =>
-            c.id === contextId ? { ...c, icon: emoji ?? undefined } : c
-          )
-        }
-      })
     },
     [state]
   )
@@ -349,7 +407,7 @@ export default function App(): JSX.Element {
     const first = state.contexts[0]
     if (!first) return
     testFired.current = true
-    void createDockApp(first.id, '🚀')
+    void createDockApp(first.id)
   }, [state, createDockApp])
 
   if (!state) {
@@ -374,12 +432,14 @@ export default function App(): JSX.Element {
         onRenameContext={renameContext}
         onRenameApp={renameApp}
         onCreateDockApp={createDockApp}
+        onSetContextIcon={setContextIcon}
       />
       <Workspace
         contexts={state.contexts}
         activeApp={state.activeApp}
         openedKeys={openedKeys}
         onAutoName={autoNameApp}
+        onFavicon={captureFavicon}
       />
     </div>
   )

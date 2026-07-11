@@ -1,13 +1,24 @@
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
 /**
  * Draws a 1024px macOS-style app icon: a rounded square in the context color,
- * with either a chosen emoji or the context's initial letter. Returned as
- * base64 PNG (no data: prefix) for the main process to convert to .icns.
+ * with a chosen favicon image, an emoji, or the context's initial letter (in
+ * that order of precedence). Returned as base64 PNG (no data: prefix) for the
+ * main process to convert to .icns.
  */
-export function renderIconPngBase64(options: {
-  emoji: string | null
+export async function renderIconPngBase64(options: {
+  image?: string | null
+  emoji?: string | null
   letter: string
   color: string
-}): string {
+}): Promise<string> {
   const size = 1024
   const canvas = document.createElement('canvas')
   canvas.width = size
@@ -23,6 +34,22 @@ export function renderIconPngBase64(options: {
   ctx.roundRect(margin, margin, rect, rect, radius)
   ctx.fillStyle = options.color
   ctx.fill()
+
+  if (options.image) {
+    try {
+      const img = await loadImage(options.image)
+      // Contain the favicon centered at ~56% of the tile.
+      const target = rect * 0.56
+      const scale = Math.min(target / img.width, target / img.height)
+      const w = img.width * scale
+      const h = img.height * scale
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
+      return canvas.toDataURL('image/png').split(',')[1]
+    } catch {
+      // Fall through to emoji/letter if the image fails to decode.
+    }
+  }
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'

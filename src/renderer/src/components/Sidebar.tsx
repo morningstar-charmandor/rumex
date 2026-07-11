@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import type { ActiveApp, WorkContext } from '../../../shared/types'
+import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
 import { buildSuggestions } from '../catalog'
 import type { NavAction } from '../App'
 
@@ -19,7 +19,11 @@ interface SidebarProps {
   onDeleteContext(contextId: string): void
   onRenameContext(contextId: string, name: string): void
   onRenameApp(contextId: string, appId: string, name: string): void
-  onCreateDockApp(contextId: string, emoji: string | null): void
+  onCreateDockApp(contextId: string): void
+  onSetContextIcon(
+    contextId: string,
+    next: { emoji?: string | null; image?: string | null }
+  ): void
 }
 
 type Renaming = { kind: 'context'; contextId: string } | { kind: 'app'; contextId: string; appId: string }
@@ -136,52 +140,111 @@ function AddAppForm(props: {
   )
 }
 
-function DockAppForm(props: {
-  color: string
-  letter: string
-  initialEmoji?: string
-  onSubmit(emoji: string | null): void
-  onCancel(): void
+/** A context's leading icon: chosen favicon, else emoji, else color dot. */
+function ContextIcon(props: { context: WorkContext }): JSX.Element {
+  const { context } = props
+  if (context.iconImage) {
+    return <img src={context.iconImage} alt="" className="h-4 w-4 shrink-0 rounded-[3px]" />
+  }
+  if (context.icon) {
+    return (
+      <span className="w-4 shrink-0 overflow-hidden text-center text-[13px] leading-none">
+        {[...context.icon].slice(0, 2).join('')}
+      </span>
+    )
+  }
+  return (
+    <span
+      className="mx-1 h-2 w-2 shrink-0 rounded-full"
+      style={{ backgroundColor: context.color }}
+    />
+  )
+}
+
+/** An app's leading icon: its real favicon, else a colored letter tile. */
+function AppIcon(props: { app: WebApp; color: string }): JSX.Element {
+  if (props.app.favicon) {
+    return <img src={props.app.favicon} alt="" className="h-5 w-5 shrink-0 rounded" />
+  }
+  return (
+    <span
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-zinc-950"
+      style={{ backgroundColor: props.color }}
+    >
+      {props.app.name.charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
+/**
+ * Popover to set a context's icon: a custom emoji, or one of the favicons
+ * from the apps inside the context, or reset to the color dot.
+ */
+function ContextIconPicker(props: {
+  context: WorkContext
+  onSet(next: { emoji?: string | null; image?: string | null }): void
+  onClose(): void
 }): JSX.Element {
-  const [emoji, setEmoji] = useState(props.initialEmoji ?? '')
+  const [emoji, setEmoji] = useState('')
+  const appIcons = props.context.apps.filter((a) => a.favicon)
   return (
     <div
-      className="ml-4 flex flex-col gap-1.5 rounded-md bg-zinc-900 p-2 ring-1 ring-zinc-800"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') props.onCancel()
-      }}
+      className="absolute left-2 top-9 z-30 w-56 rounded-lg border border-zinc-800 bg-zinc-900 p-2 shadow-xl"
+      onKeyDown={(e) => e.key === 'Escape' && props.onClose()}
     >
-      <div className="flex items-center gap-2">
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base font-bold text-zinc-950"
-          style={{ backgroundColor: props.color }}
-        >
-          {emoji.trim() || props.letter.toUpperCase()}
-        </span>
-        <input
-          autoFocus
-          value={emoji}
-          placeholder="Emoji (optional)"
-          onChange={(e) => setEmoji(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && props.onSubmit(emoji.trim() || null)}
-          className="w-full min-w-0 rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
-        />
-      </div>
-      <p className="text-[11px] leading-4 text-zinc-600">
-        Creates a Mac app for this context — drag it to your Dock. ⌃⌘Space opens the emoji picker.
+      <p className="px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        Custom emoji
       </p>
-      <div className="flex justify-end gap-1">
+      <input
+        autoFocus
+        value={emoji}
+        placeholder="Type or paste an emoji…"
+        onChange={(e) => setEmoji(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && emoji.trim()) {
+            props.onSet({ emoji: emoji.trim() })
+            props.onClose()
+          }
+        }}
+        className="w-full rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none ring-1 ring-zinc-700 focus:ring-zinc-500"
+      />
+      <p className="px-1 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        Use an app icon
+      </p>
+      {appIcons.length > 0 ? (
+        <div className="flex flex-wrap gap-1 px-1">
+          {appIcons.map((a) => (
+            <button
+              key={a.id}
+              title={a.name}
+              onClick={() => {
+                props.onSet({ image: a.favicon })
+                props.onClose()
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-md ring-1 ring-zinc-700 hover:ring-zinc-500"
+            >
+              <img src={a.favicon} alt={a.name} className="h-5 w-5 rounded" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="px-1 text-[12px] text-zinc-600">Open an app to load its icon.</p>
+      )}
+      <div className="mt-2 flex justify-between border-t border-zinc-800 pt-2">
         <button
-          onClick={props.onCancel}
+          onClick={() => {
+            props.onSet({ emoji: null, image: null })
+            props.onClose()
+          }}
           className="rounded px-2 py-0.5 text-[12px] text-zinc-400 hover:bg-zinc-800"
         >
-          Cancel
+          Reset
         </button>
         <button
-          onClick={() => props.onSubmit(emoji.trim() || null)}
-          className="rounded bg-zinc-100 px-2 py-0.5 text-[12px] font-medium text-zinc-900 hover:bg-white"
+          onClick={props.onClose}
+          className="rounded px-2 py-0.5 text-[12px] text-zinc-400 hover:bg-zinc-800"
         >
-          Create app
+          Done
         </button>
       </div>
     </div>
@@ -192,7 +255,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
   const [addingContext, setAddingContext] = useState(false)
   const [addingAppTo, setAddingAppTo] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<Renaming | null>(null)
-  const [dockAppFor, setDockAppFor] = useState<string | null>(null)
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
   const isMac = window.api.platform === 'darwin'
   const clientMode = window.api.clientContextId !== null
 
@@ -246,7 +309,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
           const isExpanded = props.expanded.includes(context.id)
           return (
             <div key={context.id}>
-              <div className="group flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-zinc-900">
+              <div className="group relative flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-zinc-900">
                 {isRenamingContext(context.id) ? (
                   <InlineInput
                     placeholder="Context name"
@@ -260,6 +323,18 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                 ) : (
                   <>
                     <button
+                      onClick={() =>
+                        !clientMode &&
+                        setIconPickerFor(iconPickerFor === context.id ? null : context.id)
+                      }
+                      title={clientMode ? undefined : 'Change icon'}
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${
+                        clientMode ? 'cursor-default' : 'hover:bg-zinc-800'
+                      }`}
+                    >
+                      <ContextIcon context={context} />
+                    </button>
+                    <button
                       onClick={() => props.onToggleExpanded(context.id)}
                       onDoubleClick={() =>
                         !clientMode && setRenaming({ kind: 'context', contextId: context.id })
@@ -271,16 +346,6 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           : 'Click to collapse/expand · double-click to rename'
                       }
                     >
-                      {context.icon ? (
-                        <span className="w-4 shrink-0 overflow-hidden text-center text-[13px] leading-none">
-                          {[...context.icon].slice(0, 2).join('')}
-                        </span>
-                      ) : (
-                        <span
-                          className="mx-1 h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: context.color }}
-                        />
-                      )}
                       <span className="truncate text-[13px] font-medium text-zinc-300">
                         {context.name}
                       </span>
@@ -309,11 +374,8 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                       <>
                         {isMac && (
                           <button
-                            onClick={() => {
-                              setDockAppFor(dockAppFor === context.id ? null : context.id)
-                              if (!isExpanded) props.onToggleExpanded(context.id)
-                            }}
-                            title="Add to Dock as its own app"
+                            onClick={() => props.onCreateDockApp(context.id)}
+                            title="Add to Dock as its own app (uses this context's icon)"
                             className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 group-hover:flex"
                           >
                             <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -335,22 +397,17 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     )}
                   </>
                 )}
+                {iconPickerFor === context.id && (
+                  <ContextIconPicker
+                    context={context}
+                    onSet={(next) => props.onSetContextIcon(context.id, next)}
+                    onClose={() => setIconPickerFor(null)}
+                  />
+                )}
               </div>
 
               {isExpanded && (
                 <div className="mt-0.5 space-y-0.5">
-                  {dockAppFor === context.id && (
-                    <DockAppForm
-                      color={context.color}
-                      letter={context.name.charAt(0) || 'C'}
-                      initialEmoji={context.icon}
-                      onSubmit={(emoji) => {
-                        props.onCreateDockApp(context.id, emoji)
-                        setDockAppFor(null)
-                      }}
-                      onCancel={() => setDockAppFor(null)}
-                    />
-                  )}
                   {context.apps.map((webApp) => {
                     const isActive =
                       props.activeApp?.contextId === context.id &&
@@ -382,12 +439,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                               className="flex min-w-0 flex-1 items-center gap-2 text-left"
                               title={`${webApp.url} · double-click to rename`}
                             >
-                              <span
-                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-zinc-950"
-                                style={{ backgroundColor: context.color }}
-                              >
-                                {webApp.name.charAt(0).toUpperCase()}
-                              </span>
+                              <AppIcon app={webApp} color={context.color} />
                               <span
                                 className={`truncate text-[13px] ${
                                   isActive ? 'text-zinc-100' : 'text-zinc-400'

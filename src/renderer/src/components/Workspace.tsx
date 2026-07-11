@@ -10,6 +10,7 @@ interface WorkspaceProps {
   activeApp: ActiveApp | null
   openedKeys: Set<string>
   onAutoName(contextId: string, appId: string, title: string): void
+  onFavicon(contextId: string, appId: string): void
 }
 
 /**
@@ -22,11 +23,14 @@ function AppView(props: {
   webApp: WebApp
   active: boolean
   onTitle(title: string): void
+  onFavicon(): void
 }): JSX.Element {
   const ref = useRef<HTMLElement>(null)
   const [loading, setLoading] = useState(true)
   const onTitleRef = useRef(props.onTitle)
   onTitleRef.current = props.onTitle
+  const onFaviconRef = useRef(props.onFavicon)
+  onFaviconRef.current = props.onFavicon
 
   useEffect(() => {
     const view = ref.current
@@ -37,9 +41,14 @@ function AppView(props: {
       const title = (event as Event & { title?: string }).title ?? ''
       onTitleRef.current(cleanTitle(title))
     }
+    // Resolve the favicon once the guest DOM is ready. The page-favicon-updated
+    // webview event is unreliable (often never fires), so the main process
+    // derives the icon from the app URL instead.
+    const onDomReady = (): void => onFaviconRef.current()
     view.addEventListener('did-start-loading', onStart)
     view.addEventListener('did-stop-loading', onStop)
     view.addEventListener('page-title-updated', onTitleUpdated)
+    view.addEventListener('dom-ready', onDomReady)
 
     // Electron's <webview> hosts the guest page in a shadow-DOM iframe that
     // can get stuck at a stale size (content renders cropped, the rest shows
@@ -61,6 +70,7 @@ function AppView(props: {
       view.removeEventListener('did-start-loading', onStart)
       view.removeEventListener('did-stop-loading', onStop)
       view.removeEventListener('page-title-updated', onTitleUpdated)
+      view.removeEventListener('dom-ready', onDomReady)
       view.removeEventListener('dom-ready', fixGuestSize)
       observer.disconnect()
     }
@@ -113,6 +123,7 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
           webApp={webApp}
           active={activeKey === appKey(context.id, webApp.id)}
           onTitle={(title) => props.onAutoName(context.id, webApp.id, title)}
+          onFavicon={() => props.onFavicon(context.id, webApp.id)}
         />
       ))}
 

@@ -4,14 +4,18 @@ export interface WebApp {
   url: string
   /** Name was derived from the URL; replace it with the page title once loaded. */
   autoNamed?: boolean
+  /** The site's favicon as a data URI, captured from the live page. */
+  favicon?: string
 }
 
 export interface WorkContext {
   id: string
   name: string
   color: string
-  /** Emoji chosen for this context's Dock app; shown in the sidebar too. */
+  /** Emoji chosen for this context; shown in the sidebar and Dock app. */
   icon?: string
+  /** A favicon (data URI) chosen as this context's icon; takes precedence over `icon`. */
+  iconImage?: string
   apps: WebApp[]
 }
 
@@ -44,6 +48,8 @@ export interface Api {
   saveState(state: AppState): Promise<void>
   clearPartition(partition: string): Promise<void>
   createDockApp(request: DockAppRequest): Promise<DockAppResult>
+  /** Downloads a favicon URL in the main process and returns it as a data URI. */
+  fetchFavicon(url: string): Promise<string | null>
   /** Fires when another process (main app or a client app) changed the shared state file. */
   onStateExternalChange(callback: () => void): () => void
   /** Set when this process is a per-context Dock app; the UI shows only that context. */
