@@ -6,6 +6,8 @@ export interface WebApp {
   autoNamed?: boolean
   /** The site's favicon as a data URI, captured from the live page. */
   favicon?: string
+  /** Exempt this app from auto-sleep (e.g. an app that must keep notifying). */
+  neverSleep?: boolean
 }
 
 export interface WorkContext {
@@ -26,12 +28,21 @@ export interface ActiveApp {
 
 export type Theme = 'light' | 'dark' | 'system'
 
+export interface Settings {
+  /** Minutes of inactivity before an app auto-sleeps; 0 disables auto-sleep. */
+  sleepAfterMinutes?: number
+}
+
 export interface AppState {
   contexts: WorkContext[]
   activeApp: ActiveApp | null
   expanded: string[]
   theme?: Theme
+  settings?: Settings
 }
+
+/** appKey → resident memory in MB for awake apps. */
+export type MemoryUsage = Record<string, number>
 
 export interface DockAppRequest {
   contextId: string
@@ -53,6 +64,8 @@ export interface Api {
   createDockApp(request: DockAppRequest): Promise<DockAppResult>
   /** Downloads a favicon URL in the main process and returns it as a data URI. */
   fetchFavicon(url: string): Promise<string | null>
+  /** Resident memory (MB) for each awake app, keyed by appKey. */
+  getMemoryUsage(items: { key: string; webContentsId: number }[]): Promise<MemoryUsage>
   /** Fires when another process (main app or a client app) changed the shared state file. */
   onStateExternalChange(callback: () => void): () => void
   /** Set when this process is a per-context Dock app; the UI shows only that context. */

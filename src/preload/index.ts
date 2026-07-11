@@ -14,6 +14,7 @@ const api: Api = {
   clearPartition: (partition) => ipcRenderer.invoke('partition:clear', partition) as Promise<void>,
   createDockApp: (request) => ipcRenderer.invoke('dockapp:create', request),
   fetchFavicon: (url) => ipcRenderer.invoke('favicon:fetch', url) as Promise<string | null>,
+  getMemoryUsage: (items) => ipcRenderer.invoke('metrics:get', items),
   onStateExternalChange: (callback) => {
     const listener = (): void => callback()
     ipcRenderer.on('state:external-change', listener)

@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, session, screen, shell, nativeTheme } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  session,
+  screen,
+  shell,
+  nativeTheme,
+  webContents
+} from 'electron'
 import type { Rectangle } from 'electron'
 import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
@@ -370,6 +379,28 @@ if (!gotSingleInstanceLock) {
     // data URI. Given an app's page URL, try the page's declared icon links,
     // then /favicon.ico, then a favicon service — first success wins.
     ipcMain.handle('favicon:fetch', (_event, url: string) => resolveFavicon(url))
+
+    // Per-app resident memory: map each webview's webContents to its OS pid,
+    // then look that pid up in the process metrics (workingSetSize is in KB).
+    ipcMain.handle(
+      'metrics:get',
+      (_event, items: { key: string; webContentsId: number }[]) => {
+        const byPid = new Map<number, number>()
+        for (const m of app.getAppMetrics()) byPid.set(m.pid, m.memory.workingSetSize)
+        const usage: Record<string, number> = {}
+        for (const { key, webContentsId } of items) {
+          try {
+            const wc = webContents.fromId(webContentsId)
+            const pid = wc?.getOSProcessId()
+            const kb = pid ? byPid.get(pid) : undefined
+            if (kb) usage[key] = Math.round(kb / 1024)
+          } catch {
+            // webContents gone (app sleeping) — omit it
+          }
+        }
+        return usage
+      }
+    )
 
     ipcMain.handle('dockapp:create', (_event, request: DockAppRequest) => {
       const result = createDockApp(request)

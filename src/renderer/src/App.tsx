@@ -22,6 +22,8 @@ export function appKey(contextId: string, appId: string): string {
   return `${contextId}:${appId}`
 }
 
+export const DEFAULT_SLEEP_MINUTES = 15
+
 function seedState(): AppState {
   const id = crypto.randomUUID()
   return {
@@ -52,6 +54,12 @@ export default function App(): JSX.Element {
   // Mirror of the latest state for callbacks that need it without re-subscribing.
   const stateRef = useRef<AppState | null>(null)
   stateRef.current = state
+  const openedKeysRef = useRef(openedKeys)
+  openedKeysRef.current = openedKeys
+  // Last time each opened app was the active one; drives auto-sleep.
+  const lastActive = useRef<Map<string, number>>(new Map())
+  // Resident memory (MB) per awake app, polled from the main process.
+  const [memory, setMemory] = useState<Record<string, number>>({})
 
   useEffect(() => {
     window.api.loadState().then((saved) => {
@@ -159,9 +167,102 @@ export default function App(): JSX.Element {
   )
 
   const selectApp = useCallback((contextId: string, appId: string) => {
-    setOpenedKeys((prev) => new Set(prev).add(appKey(contextId, appId)))
+    const key = appKey(contextId, appId)
+    lastActive.current.set(key, Date.now())
+    setOpenedKeys((prev) => new Set(prev).add(key))
     setState((s) => (s ? { ...s, activeApp: { contextId, appId } } : s))
   }, [])
+
+  // Sleep an app: unmount its webview so its renderer process exits and frees
+  // memory. The persistent partition keeps its cookies/login on disk, so
+  // re-selecting it later just reloads the page.
+  const sleepApp = useCallback((contextId: string, appId: string) => {
+    const key = appKey(contextId, appId)
+    setOpenedKeys((prev) => {
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    setState((s) => {
+      if (!s) return s
+      const active =
+        s.activeApp?.contextId === contextId && s.activeApp?.appId === appId ? null : s.activeApp
+      return { ...s, activeApp: active }
+    })
+  }, [])
+
+  const toggleNeverSleep = useCallback((contextId: string, appId: string) => {
+    setState((s) => {
+      if (!s) return s
+      return {
+        ...s,
+        contexts: s.contexts.map((c) =>
+          c.id === contextId
+            ? {
+                ...c,
+                apps: c.apps.map((a) => (a.id === appId ? { ...a, neverSleep: !a.neverSleep } : a))
+              }
+            : c
+        )
+      }
+    })
+  }, [])
+
+  const setSleepAfter = useCallback((minutes: number) => {
+    setState((s) => (s ? { ...s, settings: { ...s.settings, sleepAfterMinutes: minutes } } : s))
+  }, [])
+
+  // Poll per-app memory from the main process (workingSetSize per renderer).
+  useEffect(() => {
+    const poll = async (): Promise<void> => {
+      const items: { key: string; webContentsId: number }[] = []
+      document.querySelectorAll<HTMLElement>('webview[data-appkey]').forEach((el) => {
+        const key = el.getAttribute('data-appkey')
+        try {
+          const id = (el as unknown as { getWebContentsId(): number }).getWebContentsId()
+          if (key && id) items.push({ key, webContentsId: id })
+        } catch {
+          // not attached yet
+        }
+      })
+      if (items.length === 0) {
+        setMemory({})
+        return
+      }
+      setMemory(await window.api.getMemoryUsage(items))
+    }
+    void poll()
+    const timer = setInterval(poll, 3000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Auto-sleep: every tick, keep the active app fresh and sleep any non-active,
+  // non-pinned app idle past the threshold.
+  useEffect(() => {
+    const tick = (): void => {
+      const s = stateRef.current
+      if (!s) return
+      const minutes = s.settings?.sleepAfterMinutes ?? DEFAULT_SLEEP_MINUTES
+      const activeKey = s.activeApp
+        ? appKey(s.activeApp.contextId, s.activeApp.appId)
+        : null
+      const now = Date.now()
+      if (activeKey) lastActive.current.set(activeKey, now)
+      if (minutes <= 0) return
+      const cutoff = now - minutes * 60_000
+      for (const key of openedKeysRef.current) {
+        if (key === activeKey) continue
+        const [contextId, appId] = key.split(':')
+        const app = s.contexts.find((c) => c.id === contextId)?.apps.find((a) => a.id === appId)
+        if (!app || app.neverSleep) continue
+        const seen = lastActive.current.get(key) ?? now
+        if (!lastActive.current.has(key)) lastActive.current.set(key, now)
+        if (seen < cutoff) sleepApp(contextId, appId)
+      }
+    }
+    const timer = setInterval(tick, 15_000)
+    return () => clearInterval(timer)
+  }, [sleepApp])
 
   const toggleExpanded = useCallback((contextId: string) => {
     setState((s) => {
@@ -456,6 +557,12 @@ export default function App(): JSX.Element {
         onSetContextIcon={setContextIcon}
         theme={theme}
         onSetTheme={setTheme}
+        openedKeys={openedKeys}
+        memory={memory}
+        onSleepApp={sleepApp}
+        onToggleNeverSleep={toggleNeverSleep}
+        sleepAfterMinutes={state.settings?.sleepAfterMinutes ?? DEFAULT_SLEEP_MINUTES}
+        onSetSleepAfter={setSleepAfter}
       />
       <Workspace
         contexts={state.contexts}

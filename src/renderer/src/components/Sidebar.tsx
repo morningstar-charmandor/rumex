@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import type { ActiveApp, Theme, WebApp, WorkContext } from '../../../shared/types'
+import type { ActiveApp, MemoryUsage, Theme, WebApp, WorkContext } from '../../../shared/types'
 import { buildSuggestions } from '../catalog'
-import type { NavAction } from '../App'
+import { appKey, type NavAction } from '../App'
 
 interface SidebarProps {
   contexts: WorkContext[]
@@ -26,6 +26,12 @@ interface SidebarProps {
   ): void
   theme: Theme
   onSetTheme(theme: Theme): void
+  openedKeys: Set<string>
+  memory: MemoryUsage
+  onSleepApp(contextId: string, appId: string): void
+  onToggleNeverSleep(contextId: string, appId: string): void
+  sleepAfterMinutes: number
+  onSetSleepAfter(minutes: number): void
 }
 
 const THEMES: { value: Theme; label: string; icon: JSX.Element }[] = [
@@ -473,10 +479,13 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     const isActive =
                       props.activeApp?.contextId === context.id &&
                       props.activeApp?.appId === webApp.id
+                    const key = appKey(context.id, webApp.id)
+                    const awake = props.openedKeys.has(key)
+                    const mb = props.memory[key]
                     return (
                       <div
                         key={webApp.id}
-                        className={`group ml-4 flex items-center gap-2 rounded-md px-2 py-1.5 ${
+                        className={`group ml-4 flex items-center gap-1 rounded-md px-2 py-1.5 ${
                           isActive
                             ? 'bg-zinc-200 dark:bg-zinc-800/90'
                             : 'hover:bg-zinc-100 dark:hover:bg-zinc-900'
@@ -500,28 +509,75 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                                 setRenaming({ kind: 'app', contextId: context.id, appId: webApp.id })
                               }
                               className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                              title={`${webApp.url} · double-click to rename`}
+                              title={
+                                awake
+                                  ? `${webApp.url} · double-click to rename`
+                                  : `${webApp.url} · asleep — click to wake`
+                              }
                             >
-                              <AppIcon app={webApp} color={context.color} />
+                              <span className={awake ? '' : 'opacity-40'}>
+                                <AppIcon app={webApp} color={context.color} />
+                              </span>
                               <span
                                 className={`truncate text-[13px] ${
                                   isActive
                                     ? 'text-zinc-900 dark:text-zinc-100'
-                                    : 'text-zinc-600 dark:text-zinc-400'
+                                    : awake
+                                      ? 'text-zinc-600 dark:text-zinc-400'
+                                      : 'text-zinc-400 dark:text-zinc-500'
                                 }`}
                               >
                                 {webApp.name}
                               </span>
+                              {webApp.neverSleep && (
+                                <svg
+                                  viewBox="0 0 16 16"
+                                  className="h-3 w-3 shrink-0 fill-zinc-400 dark:fill-zinc-500"
+                                  aria-label="Never sleeps"
+                                >
+                                  <path d="M8 1.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 11.7l-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" />
+                                </svg>
+                              )}
                             </button>
-                            <button
-                              onClick={() => props.onDeleteApp(context.id, webApp.id)}
-                              title="Remove app and wipe its session"
-                              className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-300 hover:text-red-500 group-hover:flex dark:hover:bg-zinc-700 dark:hover:text-red-400"
-                            >
-                              <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
-                                <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
-                              </svg>
-                            </button>
+                            {/* At rest: memory (awake) or a sleep dot. On hover: actions. */}
+                            <span className="shrink-0 text-[10px] tabular-nums text-zinc-400 group-hover:hidden dark:text-zinc-600">
+                              {awake ? (mb ? `${mb} MB` : '') : '💤'}
+                            </span>
+                            <div className="hidden shrink-0 items-center group-hover:flex">
+                              <button
+                                onClick={() => props.onToggleNeverSleep(context.id, webApp.id)}
+                                title={webApp.neverSleep ? 'Allow sleeping' : 'Never sleep this app'}
+                                className={`flex h-5 w-5 items-center justify-center rounded hover:bg-zinc-300 dark:hover:bg-zinc-700 ${
+                                  webApp.neverSleep
+                                    ? 'text-amber-500'
+                                    : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200'
+                                }`}
+                              >
+                                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
+                                  <path d="M8 1.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 11.7l-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" />
+                                </svg>
+                              </button>
+                              {awake && (
+                                <button
+                                  onClick={() => props.onSleepApp(context.id, webApp.id)}
+                                  title="Sleep now (frees memory)"
+                                  className="flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-300 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                                >
+                                  <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" />
+                                  </svg>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => props.onDeleteApp(context.id, webApp.id)}
+                                title="Remove app and wipe its session"
+                                className="flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-300 hover:text-red-500 dark:hover:bg-zinc-700 dark:hover:text-red-400"
+                              >
+                                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current">
+                                  <path d="M4.7 3.6L8 6.9l3.3-3.3 1.1 1.1L9.1 8l3.3 3.3-1.1 1.1L8 9.1l-3.3 3.3-1.1-1.1L6.9 8 3.6 4.7z" />
+                                </svg>
+                              </button>
+                            </div>
                           </>
                         )}
                       </div>
@@ -572,6 +628,27 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
               + New Context
             </button>
           ))}
+        {!clientMode && (
+          <label className="flex items-center justify-between gap-2 px-1 text-[11px] text-zinc-500">
+            <span className="flex items-center gap-1">
+              <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" />
+              </svg>
+              Sleep idle apps
+            </span>
+            <select
+              value={props.sleepAfterMinutes}
+              onChange={(e) => props.onSetSleepAfter(Number(e.target.value))}
+              className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] text-zinc-700 outline-none ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-zinc-800"
+            >
+              <option value={0}>Off</option>
+              <option value={5}>5 min</option>
+              <option value={15}>15 min</option>
+              <option value={30}>30 min</option>
+              <option value={60}>1 hour</option>
+            </select>
+          </label>
+        )}
         <ThemeSwitcher theme={props.theme} onSet={props.onSetTheme} />
       </div>
     </aside>

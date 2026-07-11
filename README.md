@@ -42,6 +42,15 @@ Hover a context in the sidebar and click the **Add to Dock** icon: ContextWorksp
 
 How it works: the wrapper is an APFS copy-on-write clone of the app bundle (near-zero disk cost) whose app payload is a stub that pins `CW_CONTEXT_ID` and delegates to the real main entry. Client apps run with their own data directory (`~/Library/Application Support/ContextWorkspace-Clients/<contextId>`); on first launch the context's session partitions are **copied** from the main app so logins carry over. From then on the two stores are independent. (A symlinked `Contents/Frameworks` does not work — Electron SIGTRAPs on startup — hence the clone.)
 
+## Memory Saver
+
+Apps you haven't looked at for a while are automatically put to sleep — their `<webview>` is unmounted so the renderer process exits and frees its memory. The persistent partition keeps cookies/login on disk, so re-selecting a sleeping app just reloads the page (you stay signed in). The active app never sleeps.
+
+- **Threshold**: a control in the sidebar footer (Off / 5 / 15 / 30 min / 1 hour), default 15 min.
+- **Sleep now**: hover an app → the moon button sleeps it immediately.
+- **Never sleep**: hover an app → the star button pins it awake (for apps that must keep notifying, e.g. Slack). Pinned apps show a small star.
+- **Memory readout**: each awake app shows its resident memory (MB) at rest; sleeping apps show 💤.
+
 ## Persistence
 
 - `app-state.json` — contexts, apps, last active app (in Electron's `userData` dir)
