@@ -157,8 +157,65 @@ function createWindow(): void {
   }
 }
 
+// Google refuses sign-in from anything it can identify as an embedded
+// browser. A cleaned Chrome UA is not enough: Google cross-checks the claimed
+// Chrome against real-Chrome-only signals (client-hint consistency,
+// window.chrome, …). The reliable approach — used by Ferdium/Rambox alike —
+// is to present as Firefox on Google's login pages only: Firefox claims none
+// of those signals, so there is nothing to cross-check.
+const FIREFOX_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.0) Gecko/20100101 Firefox/141.0'
+const GOOGLE_LOGIN_HOSTS = /(^|\.)accounts\.(google|youtube)\.com$/
+
+function isGoogleLoginUrl(url: string): boolean {
+  try {
+    return GOOGLE_LOGIN_HOSTS.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+const uaPatchedSessions = new WeakSet<Electron.Session>()
+
+/** Rewrites request headers on login pages (covers the very first request,
+ * before setUserAgent can kick in) and drops Chrome client-hint headers,
+ * which Firefox would never send. */
+function patchSessionForGoogleLogin(ses: Electron.Session): void {
+  if (uaPatchedSessions.has(ses)) return
+  uaPatchedSessions.add(ses)
+  ses.webRequest.onBeforeSendHeaders(
+    { urls: ['https://accounts.google.com/*', 'https://accounts.youtube.com/*'] },
+    (details, callback) => {
+      const requestHeaders = { ...details.requestHeaders }
+      requestHeaders['User-Agent'] = FIREFOX_UA
+      for (const key of Object.keys(requestHeaders)) {
+        if (key.toLowerCase().startsWith('sec-ch-ua')) delete requestHeaders[key]
+      }
+      callback({ requestHeaders })
+    }
+  )
+}
+
 app.on('web-contents-created', (_event, contents) => {
-  if (contents.getType() !== 'webview') return
+  const type = contents.getType()
+  if (type !== 'webview' && type !== 'window') return
+
+  patchSessionForGoogleLogin(contents.session)
+
+  // Keep navigator.userAgent consistent with the headers: Firefox while on a
+  // Google login page, the normal cleaned Chrome UA everywhere else.
+  contents.on('did-start-navigation', (details) => {
+    if (!details.isMainFrame || !/^https?:/.test(details.url)) return
+    const wantsFirefox = isGoogleLoginUrl(details.url)
+    const current = contents.getUserAgent()
+    if (wantsFirefox && current !== FIREFOX_UA) {
+      contents.setUserAgent(FIREFOX_UA)
+    } else if (!wantsFirefox && current === FIREFOX_UA) {
+      contents.setUserAgent(app.userAgentFallback)
+    }
+  })
+
+  if (type !== 'webview') return
   // Popups (OAuth sign-in flows etc.) are allowed and automatically inherit
   // the webview's isolated session partition. Anything non-http(s) is denied.
   contents.setWindowOpenHandler(({ url }) => {
