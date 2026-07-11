@@ -1,10 +1,8 @@
 import { app } from 'electron'
 import { execFileSync } from 'child_process'
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { basename, join, resolve } from 'path'
+import { join, resolve } from 'path'
 import type { DockAppRequest, DockAppResult } from '../shared/types'
-
-const EXEC_NAME = 'ContextWorkspaceClient'
 
 /**
  * Generates a wrapper .app bundle for one context, giving it its own Dock
@@ -15,8 +13,13 @@ const EXEC_NAME = 'ContextWorkspaceClient'
  * costs almost no space. A symlinked Frameworks directory is NOT an option:
  * Electron SIGTRAPs on startup when Contents/Frameworks resolves outside the
  * bundle. The clone's app code is replaced with a small stub that pins the
- * context env vars and requires the real compiled main entry; the plist is
- * patched with the context's identity and the bundle re-signed ad-hoc.
+ * context env vars and requires the real compiled main entry.
+ *
+ * Only the display name, bundle id and icon are changed in the plist — the
+ * executable name and CFBundleName are left untouched, because Electron
+ * derives its Helper app names from them and renaming breaks the
+ * "Unable to find helper app" lookup in the packaged build. Separate Dock
+ * tiles come from the unique CFBundleIdentifier, not from the executable name.
  */
 export function createDockApp(request: DockAppRequest): DockAppResult {
   if (process.platform !== 'darwin') {
@@ -26,7 +29,11 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
     const appsDir = join(app.getPath('home'), 'Applications', 'ContextWorkspace Apps')
     const safeName = request.contextName.replace(/[/:]+/g, '-').trim() || 'Context'
     const bundle = join(appsDir, `${safeName}.app`)
-    const contents = join(bundle, 'Contents')
+    // Assemble in a temp bundle, then swap it into place. Cloning straight
+    // onto an existing (possibly running) bundle can merge into it and leave a
+    // corrupt tree (e.g. app.asar becoming a directory) — the EISDIR failures.
+    const work = join(appsDir, `.${safeName}.building.app`)
+    const contents = join(work, 'Contents')
     const resourcesDir = join(contents, 'Resources')
     const stubDir = join(resourcesDir, 'app')
     const plistPath = join(contents, 'Info.plist')
@@ -34,18 +41,20 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
     // e.g. …/node_modules/electron/dist/Electron.app (dev) or the installed
     // ContextWorkspace.app (packaged).
     const sourceBundle = resolve(process.execPath, '..', '..', '..')
-    const sourceExecName = basename(process.execPath)
 
-    rmSync(bundle, { recursive: true, force: true })
     mkdirSync(appsDir, { recursive: true })
-    execFileSync('cp', ['-Rc', sourceBundle, bundle], { stdio: 'ignore' })
+    rmSync(work, { recursive: true, force: true })
+    execFileSync('cp', ['-Rc', sourceBundle, work], { stdio: 'ignore' })
 
     // Replace the app payload with the context stub. The stub's package name
     // must match the main app's so Chromium's cookie-encryption key (Keychain
     // item "<name> Safe Storage") stays the same — otherwise copied sessions
-    // could not be decrypted.
+    // could not be decrypted. app.asar must be removed so Electron loads the
+    // stub in Resources/app instead of the packaged app (asar takes
+    // precedence); recursive covers a stale bundle where it is a directory.
     rmSync(stubDir, { recursive: true, force: true })
-    rmSync(join(resourcesDir, 'app.asar'), { force: true })
+    rmSync(join(resourcesDir, 'app.asar'), { recursive: true, force: true })
+    rmSync(join(resourcesDir, 'app.asar.unpacked'), { recursive: true, force: true })
     mkdirSync(stubDir, { recursive: true })
     const entry = join(app.getAppPath(), 'out', 'main', 'index.js')
     writeFileSync(
@@ -69,25 +78,25 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
       ].join('\n')
     )
 
-    if (sourceExecName !== EXEC_NAME) {
-      renameSync(join(contents, 'MacOS', sourceExecName), join(contents, 'MacOS', EXEC_NAME))
-    }
-
     buildIcns(request.iconPngBase64, join(resourcesDir, 'icon.icns'))
 
     const plutil = (key: string, value: string): void => {
       execFileSync('plutil', ['-replace', key, '-string', value, plistPath], { stdio: 'ignore' })
     }
-    plutil('CFBundleExecutable', EXEC_NAME)
     plutil('CFBundleIdentifier', `com.contextworkspace.client.${request.contextId}`)
-    plutil('CFBundleName', safeName)
     plutil('CFBundleDisplayName', safeName)
     plutil('CFBundleIconFile', 'icon.icns')
 
-    execFileSync('codesign', ['--force', '--sign', '-', bundle], { stdio: 'ignore' })
+    execFileSync('codesign', ['--force', '--sign', '-', work], { stdio: 'ignore' })
+
+    // Swap the freshly built bundle into place.
+    rmSync(bundle, { recursive: true, force: true })
+    renameSync(work, bundle)
 
     return { ok: true, path: bundle }
   } catch (error) {
+    // A half-built temp bundle is cleared by the rmSync(work) at the start of
+    // the next attempt, so no destructive cleanup is needed here.
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
