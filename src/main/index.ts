@@ -202,6 +202,15 @@ app.on('web-contents-created', (_event, contents) => {
 
   patchSessionForGoogleLogin(contents.session)
 
+  // Popups destined for a Google login page must present as Firefox from
+  // their very first document, or Google rejects before the navigation-time
+  // switch below can kick in.
+  contents.on('did-create-window', (win, details) => {
+    if (isGoogleLoginUrl(details.url)) {
+      win.webContents.setUserAgent(FIREFOX_UA)
+    }
+  })
+
   // Keep navigator.userAgent consistent with the headers: Firefox while on a
   // Google login page, the normal cleaned Chrome UA everywhere else.
   contents.on('did-start-navigation', (details) => {

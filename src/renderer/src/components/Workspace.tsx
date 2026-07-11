@@ -70,12 +70,15 @@ function AppView(props: {
     <div
       className={`absolute inset-0 ${props.active ? 'z-10' : 'z-0 opacity-0 pointer-events-none'}`}
     >
+      {/* allowpopups must be a string: React drops unknown boolean-valued
+          attributes, and without it window.open — i.e. every sign-in popup —
+          is silently blocked. */}
       <webview
         ref={ref}
         data-appkey={appKey(props.context.id, props.webApp.id)}
         src={props.webApp.url}
         partition={partitionFor(props.context.id, props.webApp.id)}
-        allowpopups={true}
+        allowpopups={'true' as unknown as boolean}
         useragent={window.api.userAgent}
       />
       {props.active && loading && (
