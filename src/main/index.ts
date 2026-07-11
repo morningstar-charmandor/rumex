@@ -189,13 +189,32 @@ app.on('web-contents-created', (_event, contents) => {
       }
       return {
         action: 'allow',
-        overrideBrowserWindowOptions: { autoHideMenuBar: true, backgroundColor: '#ffffff' }
+        overrideBrowserWindowOptions: {
+          autoHideMenuBar: true,
+          backgroundColor: '#ffffff',
+          // Center the popup over the app's own window so it opens on the same
+          // display, not wherever the OS would place it (e.g. another monitor).
+          ...centeredPopupBounds()
+        }
       }
     }
     if (/^mailto:/i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 })
+
+function centeredPopupBounds(): { width: number; height: number; x?: number; y?: number } {
+  const width = 600
+  const height = 720
+  const parent = mainWindow
+  if (!parent || parent.isDestroyed()) return { width, height }
+  const p = parent.getBounds()
+  const area = screen.getDisplayMatching(p).workArea
+  const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(v, hi))
+  const x = clamp(Math.round(p.x + (p.width - width) / 2), area.x, area.x + area.width - width)
+  const y = clamp(Math.round(p.y + (p.height - height) / 2), area.y, area.y + area.height - height)
+  return { width, height, x, y }
+}
 
 function loadState(): AppState | null {
   if (!clientContextId) return readJson<AppState | null>(APP_STATE_FILE, null)
