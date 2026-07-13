@@ -90,6 +90,14 @@ export function buildSuggestions(query: string): Suggestion[] {
   return matches.slice(0, 6)
 }
 
+/** Unread count from a page title: "Inbox (397) - Gmail" → 397, "(3) Slack" → 3. */
+export function parseBadge(rawTitle: string): number | undefined {
+  const m = rawTitle.match(/[([](\d[\d,]*)\+?[)\]]/)
+  if (!m) return undefined
+  const n = parseInt(m[1].replace(/,/g, ''), 10)
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
+
 /** First segment of a page title, e.g. "Inbox (3) - Gmail" → "Inbox (3)"… we
  * actually want the product part, so prefer the last short segment. */
 export function cleanTitle(raw: string): string {

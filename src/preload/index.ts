@@ -20,6 +20,11 @@ const api: Api = {
     ipcRenderer.on('state:external-change', listener)
     return () => ipcRenderer.removeListener('state:external-change', listener)
   },
+  onPaletteToggle: (callback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('palette:toggle', listener)
+    return () => ipcRenderer.removeListener('palette:toggle', listener)
+  },
   clientContextId: process.env['CW_CONTEXT_ID'] ?? null,
   testDockApp: process.env['CW_TEST_DOCKAPP'] === '1',
   platform: process.platform,

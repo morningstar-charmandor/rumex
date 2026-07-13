@@ -4,8 +4,10 @@ import type { ActiveApp, AppState, Theme } from '../../shared/types'
 import { partitionFor } from '../../shared/types'
 import type { WebviewElement } from './env'
 import { renderIconPngBase64 } from './dockIcon'
+import { cleanTitle, parseBadge } from './catalog'
 import Sidebar from './components/Sidebar'
 import Workspace from './components/Workspace'
+import CommandPalette from './components/CommandPalette'
 
 export const CONTEXT_COLORS = [
   '#60a5fa',
@@ -60,6 +62,9 @@ export default function App(): JSX.Element {
   const lastActive = useRef<Map<string, number>>(new Map())
   // Resident memory (MB) per awake app, polled from the main process.
   const [memory, setMemory] = useState<Record<string, number>>({})
+  // The context whose Brief is shown when no app is active.
+  const [focusedContextId, setFocusedContextId] = useState<string | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   useEffect(() => {
     window.api.loadState().then((saved) => {
@@ -169,8 +174,36 @@ export default function App(): JSX.Element {
   const selectApp = useCallback((contextId: string, appId: string) => {
     const key = appKey(contextId, appId)
     lastActive.current.set(key, Date.now())
+    setFocusedContextId(null)
     setOpenedKeys((prev) => new Set(prev).add(key))
-    setState((s) => (s ? { ...s, activeApp: { contextId, appId } } : s))
+    setState((s) =>
+      s
+        ? {
+            ...s,
+            activeApp: { contextId, appId },
+            contexts: s.contexts.map((c) =>
+              c.id === contextId ? { ...c, lastVisited: Date.now() } : c
+            )
+          }
+        : s
+    )
+  }, [])
+
+  // ⌘K toggles the command palette — from our own UI (keydown) and from inside
+  // a focused web app (forwarded by the main process).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    const off = window.api.onPaletteToggle(() => setPaletteOpen((v) => !v))
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      off()
+    }
   }, [])
 
   // Sleep an app: unmount its webview so its renderer process exits and frees
@@ -402,14 +435,16 @@ export default function App(): JSX.Element {
     []
   )
 
-  // When an app was added without an explicit name, adopt the page title the
-  // first time the site reports one, then leave the name alone.
-  const autoNameApp = useCallback((contextId: string, appId: string, title: string) => {
-    if (!title.trim()) return
+  // Every page-title update: refresh the unread badge, and (for apps added
+  // without an explicit name) adopt the cleaned title once, then leave it.
+  const handleTitle = useCallback((contextId: string, appId: string, rawTitle: string) => {
+    const badge = parseBadge(rawTitle)
     setState((s) => {
       if (!s) return s
       const app = s.contexts.find((c) => c.id === contextId)?.apps.find((a) => a.id === appId)
-      if (!app?.autoNamed) return s
+      if (!app) return s
+      const adoptName = app.autoNamed ? cleanTitle(rawTitle).trim() : ''
+      if (app.badge === badge && !adoptName) return s
       return {
         ...s,
         contexts: s.contexts.map((c) =>
@@ -417,10 +452,32 @@ export default function App(): JSX.Element {
             ? {
                 ...c,
                 apps: c.apps.map((a) =>
-                  a.id === appId ? { ...a, name: title, autoNamed: false } : a
+                  a.id === appId
+                    ? {
+                        ...a,
+                        badge,
+                        ...(adoptName ? { name: adoptName, autoNamed: false } : {})
+                      }
+                    : a
                 )
               }
             : c
+        )
+      }
+    })
+  }, [])
+
+  // Enter a context without a specific app: mark it visited and show its brief.
+  const enterContext = useCallback((contextId: string) => {
+    setFocusedContextId(contextId)
+    setState((s) => {
+      if (!s) return s
+      return {
+        ...s,
+        activeApp: null,
+        expanded: s.expanded.includes(contextId) ? s.expanded : [...s.expanded, contextId],
+        contexts: s.contexts.map((c) =>
+          c.id === contextId ? { ...c, lastVisited: Date.now() } : c
         )
       }
     })
@@ -563,14 +620,35 @@ export default function App(): JSX.Element {
         onToggleNeverSleep={toggleNeverSleep}
         sleepAfterMinutes={state.settings?.sleepAfterMinutes ?? DEFAULT_SLEEP_MINUTES}
         onSetSleepAfter={setSleepAfter}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
       <Workspace
         contexts={state.contexts}
         activeApp={state.activeApp}
         openedKeys={openedKeys}
-        onAutoName={autoNameApp}
+        onTitle={handleTitle}
         onFavicon={captureFavicon}
+        briefContext={
+          !state.activeApp
+            ? (state.contexts.find((c) => c.id === focusedContextId) ?? null)
+            : null
+        }
+        onSelectApp={selectApp}
       />
+      {paletteOpen && (
+        <CommandPalette
+          contexts={state.contexts}
+          onSelectApp={(cid, aid) => {
+            selectApp(cid, aid)
+            setPaletteOpen(false)
+          }}
+          onEnterContext={(cid) => {
+            enterContext(cid)
+            setPaletteOpen(false)
+          }}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
     </div>
   )
 }

@@ -26,6 +26,7 @@ interface SidebarProps {
   ): void
   theme: Theme
   onSetTheme(theme: Theme): void
+  onOpenPalette(): void
   openedKeys: Set<string>
   memory: MemoryUsage
   onSleepApp(contextId: string, appId: string): void
@@ -341,6 +342,23 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
             : 'ContextWorkspace'}
         </span>
       </div>
+
+      {!clientMode && (
+        <button
+          onClick={props.onOpenPalette}
+          title="Search contexts and apps (⌘K)"
+          className="no-drag mx-2 mb-1 flex items-center gap-2 rounded-md bg-zinc-100 px-2 py-1.5 text-left text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:ring-zinc-800 dark:hover:bg-zinc-800/70"
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M13.5 13.5l-3-3" />
+          </svg>
+          <span className="flex-1 text-[12px]">Go to…</span>
+          <kbd className="rounded bg-white px-1 text-[10px] font-medium text-zinc-400 ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:ring-zinc-700">
+            ⌘K
+          </kbd>
+        </button>
+      )}
 
       {props.activeApp && (
         <div className="flex items-center gap-0.5 border-b border-zinc-200 px-3 pb-2 dark:border-zinc-800/80">

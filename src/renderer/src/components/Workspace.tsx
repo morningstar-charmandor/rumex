@@ -2,15 +2,90 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
 import { FIREFOX_UA, isGoogleUrl, partitionFor } from '../../../shared/types'
-import { cleanTitle } from '../catalog'
 import { appKey } from '../App'
 
 interface WorkspaceProps {
   contexts: WorkContext[]
   activeApp: ActiveApp | null
   openedKeys: Set<string>
-  onAutoName(contextId: string, appId: string, title: string): void
+  /** Raw page title; App derives both the auto-name and the unread badge. */
+  onTitle(contextId: string, appId: string, rawTitle: string): void
   onFavicon(contextId: string, appId: string): void
+  /** When set (and no app is active), show this context's Brief. */
+  briefContext: WorkContext | null
+  onSelectApp(contextId: string, appId: string): void
+}
+
+function relativeTime(ms?: number): string {
+  if (!ms) return 'not visited yet'
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} min ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`
+  const d = Math.floor(h / 24)
+  return `${d} day${d === 1 ? '' : 's'} ago`
+}
+
+/** "Since your last visit"-style panel shown when a context is entered. */
+function ContextBrief(props: {
+  context: WorkContext
+  onSelectApp(contextId: string, appId: string): void
+}): JSX.Element {
+  const { context } = props
+  const totalUnread = context.apps.reduce((sum, a) => sum + (a.badge ?? 0), 0)
+  return (
+    <div className="mx-auto flex h-full w-full max-w-lg flex-col justify-center px-8">
+      <div className="mb-1 flex items-center gap-2.5">
+        {context.iconImage ? (
+          <img src={context.iconImage} alt="" className="h-7 w-7 rounded-lg" />
+        ) : context.icon ? (
+          <span className="text-2xl leading-none">{[...context.icon].slice(0, 2).join('')}</span>
+        ) : (
+          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: context.color }} />
+        )}
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{context.name}</h1>
+      </div>
+      <p className="mb-5 text-[13px] text-zinc-500">
+        Last opened {relativeTime(context.lastVisited)}
+        {totalUnread > 0 && ` · ${totalUnread} unread waiting`}
+      </p>
+
+      {context.apps.length === 0 ? (
+        <p className="text-[13px] text-zinc-500">No apps in this context yet.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {context.apps.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => props.onSelectApp(context.id, a.id)}
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
+            >
+              {a.favicon ? (
+                <img src={a.favicon} alt="" className="h-6 w-6 shrink-0 rounded" />
+              ) : (
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[11px] font-bold text-zinc-950"
+                  style={{ backgroundColor: context.color }}
+                >
+                  {a.name.charAt(0).toUpperCase()}
+                </span>
+              )}
+              <span className="flex-1 truncate text-[13px] text-zinc-800 dark:text-zinc-200">
+                {a.name}
+              </span>
+              {a.badge ? (
+                <span className="rounded-full bg-zinc-200 px-2 text-[11px] font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
+                  {a.badge} unread
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -39,7 +114,7 @@ function AppView(props: {
     const onStop = (): void => setLoading(false)
     const onTitleUpdated = (event: Event): void => {
       const title = (event as Event & { title?: string }).title ?? ''
-      onTitleRef.current(cleanTitle(title))
+      onTitleRef.current(title)
     }
     // Resolve the favicon once the guest DOM is ready. The page-favicon-updated
     // webview event is unreliable (often never fires), so the main process
@@ -122,12 +197,18 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
           context={context}
           webApp={webApp}
           active={activeKey === appKey(context.id, webApp.id)}
-          onTitle={(title) => props.onAutoName(context.id, webApp.id, title)}
+          onTitle={(title) => props.onTitle(context.id, webApp.id, title)}
           onFavicon={() => props.onFavicon(context.id, webApp.id)}
         />
       ))}
 
-      {!activeKey && (
+      {!activeKey && props.briefContext && (
+        <div className="absolute inset-0">
+          <ContextBrief context={props.briefContext} onSelectApp={props.onSelectApp} />
+        </div>
+      )}
+
+      {!activeKey && !props.briefContext && (
         <div className="drag flex h-full flex-col items-center justify-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-200/70 ring-1 ring-zinc-300/60 dark:bg-zinc-800/70 dark:ring-zinc-700/50">
             <svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-zinc-400 dark:stroke-zinc-500" strokeWidth="1.5">

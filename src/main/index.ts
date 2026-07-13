@@ -172,6 +172,16 @@ function createWindow(): void {
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return
 
+  // Keyboard shortcuts don't bubble out of a focused webview to our renderer,
+  // so intercept ⌘K here and forward it to the host window to open the palette.
+  contents.on('before-input-event', (event, input) => {
+    if ((input.meta || input.control) && input.key.toLowerCase() === 'k' && input.type === 'keyDown') {
+      event.preventDefault()
+      const win = mainWindow
+      if (win && !win.isDestroyed()) win.webContents.send('palette:toggle')
+    }
+  })
+
   // Popups (OAuth sign-in flows etc.) are allowed and automatically inherit
   // the opener webview's isolated session partition. Anything non-http(s) is
   // denied. A popup's navigator.userAgent is fixed at birth from the global

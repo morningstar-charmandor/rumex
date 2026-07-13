@@ -8,6 +8,8 @@ export interface WebApp {
   favicon?: string
   /** Exempt this app from auto-sleep (e.g. an app that must keep notifying). */
   neverSleep?: boolean
+  /** Unread count parsed from the page title (e.g. "Inbox (397)"); 0/undefined = none. */
+  badge?: number
 }
 
 export interface WorkContext {
@@ -18,6 +20,8 @@ export interface WorkContext {
   icon?: string
   /** A favicon (data URI) chosen as this context's icon; takes precedence over `icon`. */
   iconImage?: string
+  /** Epoch ms when the user last entered this context; drives the Context Brief. */
+  lastVisited?: number
   apps: WebApp[]
 }
 
@@ -68,6 +72,8 @@ export interface Api {
   getMemoryUsage(items: { key: string; webContentsId: number }[]): Promise<MemoryUsage>
   /** Fires when another process (main app or a client app) changed the shared state file. */
   onStateExternalChange(callback: () => void): () => void
+  /** Fires when ⌘K is pressed while a web app (webview) has focus. */
+  onPaletteToggle(callback: () => void): () => void
   /** Set when this process is a per-context Dock app; the UI shows only that context. */
   clientContextId: string | null
   /** Dev/test hook: auto-create a Dock app for the first context on launch. */

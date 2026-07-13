@@ -42,6 +42,14 @@ Hover a context in the sidebar and click the **Add to Dock** icon: ContextWorksp
 
 How it works: the wrapper is an APFS copy-on-write clone of the app bundle (near-zero disk cost) whose app payload is a stub that pins `CW_CONTEXT_ID` and delegates to the real main entry. Client apps run with their own data directory (`~/Library/Application Support/ContextWorkspace-Clients/<contextId>`); on first launch the context's session partitions are **copied** from the main app so logins carry over. From then on the two stores are independent. (A symlinked `Contents/Frameworks` does not work — Electron SIGTRAPs on startup — hence the clone.)
 
+## Command palette (⌘K)
+
+Press **⌘K** anywhere — including while a web app is focused — to open a Spotlight-style palette. Fuzzy-search across every context and app; Enter on an app opens it, Enter on a context enters it (showing its Context Brief). Also reachable via the "Go to…" bar at the top of the sidebar. The shortcut works inside webviews because the main process intercepts it (`before-input-event`) and forwards it to the UI.
+
+## Context Brief
+
+Entering a context without picking a specific app shows a Brief in the workspace: the context, when it was last opened, and its apps with any unread counts, each clickable to enter. Unread counts are parsed deterministically from webview page titles (e.g. "Inbox (397)", "(3) Slack"). AI summaries are a future additive layer — this is the honest, deterministic base.
+
 ## Memory Saver
 
 Apps you haven't looked at for a while are automatically put to sleep — their `<webview>` is unmounted so the renderer process exits and frees its memory. The persistent partition keeps cookies/login on disk, so re-selecting a sleeping app just reloads the page (you stay signed in). The active app never sleeps.
