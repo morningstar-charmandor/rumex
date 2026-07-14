@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar'
 import Workspace from './components/Workspace'
 import CommandPalette from './components/CommandPalette'
 import UpdateToast from './components/UpdateToast'
+import Settings from './components/Settings'
 
 export const CONTEXT_COLORS = [
   '#60a5fa',
@@ -69,6 +70,7 @@ export default function App(): JSX.Element {
   // The context whose Brief is shown when no app is active.
   const [focusedContextId, setFocusedContextId] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
 
   useEffect(() => {
@@ -201,15 +203,20 @@ export default function App(): JSX.Element {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+      } else if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault()
+        setSettingsOpen((v) => !v)
       }
     }
     window.addEventListener('keydown', onKey)
     const off = window.api.onPaletteToggle(() => setPaletteOpen((v) => !v))
+    const offSettings = window.api.onSettingsToggle(() => setSettingsOpen((v) => !v))
     const offUpdate = window.api.onUpdateAvailable((info) => setUpdate(info))
     const offOpenUrl = window.api.onOpenUrlInContext((url) => openUrlRef.current(url))
     return () => {
       window.removeEventListener('keydown', onKey)
       off()
+      offSettings()
       offUpdate()
       offOpenUrl()
     }
@@ -253,6 +260,19 @@ export default function App(): JSX.Element {
   const setSleepAfter = useCallback((minutes: number) => {
     setState((s) => (s ? { ...s, settings: { ...s.settings, sleepAfterMinutes: minutes } } : s))
   }, [])
+
+  const setOpenAtLogin = useCallback((open: boolean) => {
+    window.api.setLoginItem(open)
+    setState((s) => (s ? { ...s, settings: { ...s.settings, openAtLogin: open } } : s))
+  }, [])
+
+  // Keep the OS login item in sync with the persisted setting on launch.
+  const loginApplied = useRef(false)
+  useEffect(() => {
+    if (!state || loginApplied.current) return
+    loginApplied.current = true
+    window.api.setLoginItem(state.settings?.openAtLogin ?? false)
+  }, [state])
 
   // Poll per-app memory from the main process (workingSetSize per renderer).
   useEffect(() => {
@@ -638,15 +658,12 @@ export default function App(): JSX.Element {
         onRenameApp={renameApp}
         onCreateDockApp={createDockApp}
         onSetContextIcon={setContextIcon}
-        theme={theme}
-        onSetTheme={setTheme}
         openedKeys={openedKeys}
         memory={memory}
         onSleepApp={sleepApp}
         onToggleNeverSleep={toggleNeverSleep}
-        sleepAfterMinutes={state.settings?.sleepAfterMinutes ?? DEFAULT_SLEEP_MINUTES}
-        onSetSleepAfter={setSleepAfter}
         onOpenPalette={() => setPaletteOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <Workspace
         contexts={state.contexts}
@@ -676,6 +693,20 @@ export default function App(): JSX.Element {
         />
       )}
       {update && <UpdateToast info={update} onDismiss={() => setUpdate(null)} />}
+      {settingsOpen && (
+        <Settings
+          theme={theme}
+          onSetTheme={setTheme}
+          sleepAfterMinutes={state.settings?.sleepAfterMinutes ?? DEFAULT_SLEEP_MINUTES}
+          onSetSleepAfter={setSleepAfter}
+          openAtLogin={state.settings?.openAtLogin ?? false}
+          onSetOpenAtLogin={setOpenAtLogin}
+          appVersion={window.api.appVersion}
+          onCheckUpdate={() => window.api.checkForUpdate()}
+          onOpenExternal={(url) => window.api.openExternal(url)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   )
 }

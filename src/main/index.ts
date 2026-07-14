@@ -188,12 +188,17 @@ app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return
 
   // Keyboard shortcuts don't bubble out of a focused webview to our renderer,
-  // so intercept ⌘K here and forward it to the host window to open the palette.
+  // so intercept ⌘K (palette) and ⌘, (settings) here and forward them.
   contents.on('before-input-event', (event, input) => {
-    if ((input.meta || input.control) && input.key.toLowerCase() === 'k' && input.type === 'keyDown') {
+    if (input.type !== 'keyDown' || !(input.meta || input.control)) return
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
+    if (input.key.toLowerCase() === 'k') {
       event.preventDefault()
-      const win = mainWindow
-      if (win && !win.isDestroyed()) win.webContents.send('palette:toggle')
+      win.webContents.send('palette:toggle')
+    } else if (input.key === ',') {
+      event.preventDefault()
+      win.webContents.send('settings:toggle')
     }
   })
 
@@ -421,6 +426,14 @@ if (!gotSingleInstanceLock) {
       if (/^https:\/\//i.test(url)) shell.openExternal(url)
     })
 
+    ipcMain.on('set-login-item', (_event, open: boolean) => {
+      app.setLoginItemSettings({ openAtLogin: open })
+    })
+
+    ipcMain.on('get-app-version', (event) => {
+      event.returnValue = app.getVersion()
+    })
+
     // Free "update available" check: no code signing needed. Poll the repo's
     // latest GitHub Release; if its tag is newer than this build, notify the
     // renderer, which shows a non-blocking notice linking to the release page.
@@ -447,6 +460,7 @@ if (!gotSingleInstanceLock) {
       }
       setTimeout(checkForUpdate, 5000)
       setInterval(checkForUpdate, 6 * 60 * 60 * 1000)
+      ipcMain.on('update:check', () => void checkForUpdate())
     }
 
     // Per-app resident memory: map each webview's webContents to its OS pid,

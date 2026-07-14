@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import type { ActiveApp, MemoryUsage, Theme, WebApp, WorkContext } from '../../../shared/types'
+import type { ActiveApp, MemoryUsage, WebApp, WorkContext } from '../../../shared/types'
 import { buildSuggestions } from '../catalog'
 import { appKey, type NavAction } from '../App'
 
@@ -24,72 +24,12 @@ interface SidebarProps {
     contextId: string,
     next: { emoji?: string | null; image?: string | null }
   ): void
-  theme: Theme
-  onSetTheme(theme: Theme): void
   onOpenPalette(): void
+  onOpenSettings(): void
   openedKeys: Set<string>
   memory: MemoryUsage
   onSleepApp(contextId: string, appId: string): void
   onToggleNeverSleep(contextId: string, appId: string): void
-  sleepAfterMinutes: number
-  onSetSleepAfter(minutes: number): void
-}
-
-const THEMES: { value: Theme; label: string; icon: JSX.Element }[] = [
-  {
-    value: 'light',
-    label: 'Light',
-    icon: (
-      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round">
-        <circle cx="8" cy="8" r="3" />
-        <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M13 3l-1 1M4 12l-1 1" />
-      </svg>
-    )
-  },
-  {
-    value: 'dark',
-    label: 'Dark',
-    icon: (
-      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" />
-      </svg>
-    )
-  },
-  {
-    value: 'system',
-    label: 'Auto',
-    icon: (
-      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="3" width="12" height="8" rx="1" />
-        <path d="M6 13.5h4M8 11v2.5" />
-      </svg>
-    )
-  }
-]
-
-function ThemeSwitcher(props: { theme: Theme; onSet(theme: Theme): void }): JSX.Element {
-  return (
-    <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
-      {THEMES.map((t) => {
-        const active = props.theme === t.value
-        return (
-          <button
-            key={t.value}
-            onClick={() => props.onSet(t.value)}
-            title={t.label}
-            className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[11px] font-medium transition-colors ${
-              active
-                ? 'bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        )
-      })}
-    </div>
-  )
 }
 
 type Renaming = { kind: 'context'; contextId: string } | { kind: 'app'; contextId: string; appId: string }
@@ -638,7 +578,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
         })}
       </nav>
 
-      <div className="flex flex-col gap-2 border-t border-zinc-200 p-2 dark:border-zinc-800/80">
+      <div className="flex items-center gap-1 border-t border-zinc-200 p-2 dark:border-zinc-800/80">
         {!clientMode &&
           (addingContext ? (
             <InlineInput
@@ -652,33 +592,24 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
           ) : (
             <button
               onClick={() => setAddingContext(true)}
-              className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
+              className="flex-1 rounded-md px-2 py-1.5 text-left text-[13px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
             >
               + New Context
             </button>
           ))}
-        {!clientMode && (
-          <label className="flex items-center justify-between gap-2 px-1 text-[11px] text-zinc-500">
-            <span className="flex items-center gap-1">
-              <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" />
-              </svg>
-              Sleep idle apps
-            </span>
-            <select
-              value={props.sleepAfterMinutes}
-              onChange={(e) => props.onSetSleepAfter(Number(e.target.value))}
-              className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] text-zinc-700 outline-none ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-zinc-800"
-            >
-              <option value={0}>Off</option>
-              <option value={5}>5 min</option>
-              <option value={15}>15 min</option>
-              <option value={30}>30 min</option>
-              <option value={60}>1 hour</option>
-            </select>
-          </label>
+        {!clientMode && !addingContext && (
+          <button
+            onClick={props.onOpenSettings}
+            title="Settings (⌘,)"
+            aria-label="Settings"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="2.25" />
+              <path d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5L3.4 3.4" />
+            </svg>
+          </button>
         )}
-        <ThemeSwitcher theme={props.theme} onSet={props.onSetTheme} />
       </div>
     </aside>
   )

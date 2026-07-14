@@ -35,6 +35,8 @@ export type Theme = 'light' | 'dark' | 'system'
 export interface Settings {
   /** Minutes of inactivity before an app auto-sleeps; 0 disables auto-sleep. */
   sleepAfterMinutes?: number
+  /** Launch ContextWorkspace automatically at macOS login. */
+  openAtLogin?: boolean
 }
 
 export interface AppState {
@@ -87,6 +89,14 @@ export interface Api {
   onUpdateAvailable(callback: (info: UpdateInfo) => void): () => void
   /** Open an https URL in the user's default browser. */
   openExternal(url: string): void
+  /** Toggle launch-at-login for the app. */
+  setLoginItem(open: boolean): void
+  /** Manually trigger an update check (Settings → Updates). */
+  checkForUpdate(): void
+  /** Fires when ⌘, is pressed (open Settings). */
+  onSettingsToggle(callback: () => void): () => void
+  /** This build's version string, e.g. "0.1.0". */
+  appVersion: string
   /** Set when this process is a per-context Dock app; the UI shows only that context. */
   clientContextId: string | null
   /** Dev/test hook: auto-create a Dock app for the first context on launch. */

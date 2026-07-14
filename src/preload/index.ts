@@ -36,6 +36,14 @@ const api: Api = {
     return () => ipcRenderer.removeListener('update:available', listener)
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
+  setLoginItem: (open) => ipcRenderer.send('set-login-item', open),
+  checkForUpdate: () => ipcRenderer.send('update:check'),
+  onSettingsToggle: (callback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('settings:toggle', listener)
+    return () => ipcRenderer.removeListener('settings:toggle', listener)
+  },
+  appVersion: ipcRenderer.sendSync('get-app-version') as string,
   clientContextId: process.env['CW_CONTEXT_ID'] ?? null,
   testDockApp: process.env['CW_TEST_DOCKAPP'] === '1',
   platform: process.platform,
