@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
-import type { ActiveApp, AppState, Theme } from '../../shared/types'
+import type { ActiveApp, AppState, Theme, UpdateInfo } from '../../shared/types'
 import { partitionFor } from '../../shared/types'
 import type { WebviewElement } from './env'
 import { renderIconPngBase64 } from './dockIcon'
@@ -8,6 +8,7 @@ import { cleanTitle, parseBadge } from './catalog'
 import Sidebar from './components/Sidebar'
 import Workspace from './components/Workspace'
 import CommandPalette from './components/CommandPalette'
+import UpdateToast from './components/UpdateToast'
 
 export const CONTEXT_COLORS = [
   '#60a5fa',
@@ -65,6 +66,7 @@ export default function App(): JSX.Element {
   // The context whose Brief is shown when no app is active.
   const [focusedContextId, setFocusedContextId] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [update, setUpdate] = useState<UpdateInfo | null>(null)
 
   useEffect(() => {
     window.api.loadState().then((saved) => {
@@ -200,9 +202,11 @@ export default function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     const off = window.api.onPaletteToggle(() => setPaletteOpen((v) => !v))
+    const offUpdate = window.api.onUpdateAvailable((info) => setUpdate(info))
     return () => {
       window.removeEventListener('keydown', onKey)
       off()
+      offUpdate()
     }
   }, [])
 
@@ -649,6 +653,7 @@ export default function App(): JSX.Element {
           onClose={() => setPaletteOpen(false)}
         />
       )}
+      {update && <UpdateToast info={update} onDismiss={() => setUpdate(null)} />}
     </div>
   )
 }

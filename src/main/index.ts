@@ -20,6 +20,21 @@ const APP_STATE_FILE = 'app-state.json'
 const CLIENT_STATE_FILE = 'client-state.json'
 const WINDOW_STATE_FILE = 'window-state.json'
 
+/** owner/repo whose GitHub Releases feed the update-available notice. */
+const UPDATE_REPO = 'morningstar-charmandor/Electron'
+
+/** True if `remote` is a higher dotted version than `local` (e.g. 0.2.0 > 0.1.0). */
+function isNewerVersion(remote: string, local: string): boolean {
+  const r = remote.split('.').map((n) => parseInt(n, 10) || 0)
+  const l = local.split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(r.length, l.length); i++) {
+    const a = r[i] ?? 0
+    const b = l[i] ?? 0
+    if (a !== b) return a > b
+  }
+  return false
+}
+
 // Per-context Dock apps launch this same entry with CW_* env vars set by
 // their stub. Client mode gets its own userData directory (two Chromium
 // processes must never share one), while the app name — and therefore the
@@ -389,6 +404,38 @@ if (!gotSingleInstanceLock) {
     // data URI. Given an app's page URL, try the page's declared icon links,
     // then /favicon.ico, then a favicon service — first success wins.
     ipcMain.handle('favicon:fetch', (_event, url: string) => resolveFavicon(url))
+
+    ipcMain.on('open-external', (_event, url: string) => {
+      if (/^https:\/\//i.test(url)) shell.openExternal(url)
+    })
+
+    // Free "update available" check: no code signing needed. Poll the repo's
+    // latest GitHub Release; if its tag is newer than this build, notify the
+    // renderer, which shows a non-blocking notice linking to the release page.
+    // (Only the main app checks — client Dock apps stay quiet.)
+    if (!clientContextId) {
+      const checkForUpdate = async (): Promise<void> => {
+        try {
+          const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
+            headers: { Accept: 'application/vnd.github+json' },
+            signal: AbortSignal.timeout(8000)
+          })
+          if (!res.ok) return
+          const data = (await res.json()) as { tag_name?: string; html_url?: string }
+          const latest = (data.tag_name ?? '').replace(/^v/, '')
+          if (latest && isNewerVersion(latest, app.getVersion()) && data.html_url) {
+            const win = mainWindow
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('update:available', { version: latest, url: data.html_url })
+            }
+          }
+        } catch {
+          // offline, no releases yet, or rate-limited — stay silent
+        }
+      }
+      setTimeout(checkForUpdate, 5000)
+      setInterval(checkForUpdate, 6 * 60 * 60 * 1000)
+    }
 
     // Per-app resident memory: map each webview's webContents to its OS pid,
     // then look that pid up in the process metrics (workingSetSize is in KB).

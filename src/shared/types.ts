@@ -48,6 +48,13 @@ export interface AppState {
 /** appKey → resident memory in MB for awake apps. */
 export type MemoryUsage = Record<string, number>
 
+export interface UpdateInfo {
+  /** The newer version's tag, e.g. "0.2.0". */
+  version: string
+  /** The release page to download from. */
+  url: string
+}
+
 export interface DockAppRequest {
   contextId: string
   contextName: string
@@ -74,6 +81,10 @@ export interface Api {
   onStateExternalChange(callback: () => void): () => void
   /** Fires when ⌘K is pressed while a web app (webview) has focus. */
   onPaletteToggle(callback: () => void): () => void
+  /** Fires when a newer published version is found. */
+  onUpdateAvailable(callback: (info: UpdateInfo) => void): () => void
+  /** Open an https URL in the user's default browser. */
+  openExternal(url: string): void
   /** Set when this process is a per-context Dock app; the UI shows only that context. */
   clientContextId: string | null
   /** Dev/test hook: auto-create a Dock app for the first context on launch. */

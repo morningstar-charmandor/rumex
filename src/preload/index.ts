@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Api, AppState } from '../shared/types'
+import type { Api, AppState, UpdateInfo } from '../shared/types'
 
 // Some identity providers (e.g. Google) block sign-in from user agents that
 // advertise an embedded browser, so the Electron token is stripped before the
@@ -25,6 +25,12 @@ const api: Api = {
     ipcRenderer.on('palette:toggle', listener)
     return () => ipcRenderer.removeListener('palette:toggle', listener)
   },
+  onUpdateAvailable: (callback) => {
+    const listener = (_e: unknown, info: UpdateInfo): void => callback(info)
+    ipcRenderer.on('update:available', listener)
+    return () => ipcRenderer.removeListener('update:available', listener)
+  },
+  openExternal: (url) => ipcRenderer.send('open-external', url),
   clientContextId: process.env['CW_CONTEXT_ID'] ?? null,
   testDockApp: process.env['CW_TEST_DOCKAPP'] === '1',
   platform: process.platform,
