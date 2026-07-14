@@ -81,6 +81,8 @@ export interface Api {
   onStateExternalChange(callback: () => void): () => void
   /** Fires when ⌘K is pressed while a web app (webview) has focus. */
   onPaletteToggle(callback: () => void): () => void
+  /** Fires when a web app opens a new tab; the URL should open in the current context. */
+  onOpenUrlInContext(callback: (url: string) => void): () => void
   /** Fires when a newer published version is found. */
   onUpdateAvailable(callback: (info: UpdateInfo) => void): () => void
   /** Open an https URL in the user's default browser. */

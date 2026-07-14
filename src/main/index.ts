@@ -206,7 +206,19 @@ app.on('web-contents-created', (_event, contents) => {
   // from anything it detects as an embedded browser; Firefox has none of the
   // Chrome-only signals it cross-checks. (Header + navigator both come from
   // this single UA, so they stay consistent — the mismatch itself was a tell.)
-  contents.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler(({ url, disposition }) => {
+    // "Open in new tab" actions (target=_blank / plain window.open) arrive as
+    // foreground/background-tab. Rather than spawn a detached OS window, open
+    // them inside the workspace as a new app in the current context. Sign-in
+    // dialogs arrive as 'new-window' (with size features) and stay popups.
+    if (
+      /^https?:\/\//i.test(url) &&
+      (disposition === 'foreground-tab' || disposition === 'background-tab')
+    ) {
+      const win = mainWindow
+      if (win && !win.isDestroyed()) win.webContents.send('context:open-url', url)
+      return { action: 'deny' }
+    }
     if (/^https?:\/\//i.test(url)) {
       if (isGoogleUrl(url)) {
         // A popup takes its UA from the global fallback when its first

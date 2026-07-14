@@ -25,6 +25,11 @@ const api: Api = {
     ipcRenderer.on('palette:toggle', listener)
     return () => ipcRenderer.removeListener('palette:toggle', listener)
   },
+  onOpenUrlInContext: (callback) => {
+    const listener = (_e: unknown, url: string): void => callback(url)
+    ipcRenderer.on('context:open-url', listener)
+    return () => ipcRenderer.removeListener('context:open-url', listener)
+  },
   onUpdateAvailable: (callback) => {
     const listener = (_e: unknown, info: UpdateInfo): void => callback(info)
     ipcRenderer.on('update:available', listener)

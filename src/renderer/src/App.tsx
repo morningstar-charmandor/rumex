@@ -4,7 +4,7 @@ import type { ActiveApp, AppState, Theme, UpdateInfo } from '../../shared/types'
 import { partitionFor } from '../../shared/types'
 import type { WebviewElement } from './env'
 import { renderIconPngBase64 } from './dockIcon'
-import { cleanTitle, parseBadge } from './catalog'
+import { cleanTitle, nameFromUrl, parseBadge } from './catalog'
 import Sidebar from './components/Sidebar'
 import Workspace from './components/Workspace'
 import CommandPalette from './components/CommandPalette'
@@ -61,6 +61,9 @@ export default function App(): JSX.Element {
   openedKeysRef.current = openedKeys
   // Last time each opened app was the active one; drives auto-sleep.
   const lastActive = useRef<Map<string, number>>(new Map())
+  // Always points at the latest openUrlInContext so the IPC subscription can
+  // stay a one-time effect.
+  const openUrlRef = useRef<(url: string) => void>(() => {})
   // Resident memory (MB) per awake app, polled from the main process.
   const [memory, setMemory] = useState<Record<string, number>>({})
   // The context whose Brief is shown when no app is active.
@@ -203,10 +206,12 @@ export default function App(): JSX.Element {
     window.addEventListener('keydown', onKey)
     const off = window.api.onPaletteToggle(() => setPaletteOpen((v) => !v))
     const offUpdate = window.api.onUpdateAvailable((info) => setUpdate(info))
+    const offOpenUrl = window.api.onOpenUrlInContext((url) => openUrlRef.current(url))
     return () => {
       window.removeEventListener('keydown', onKey)
       off()
       offUpdate()
+      offOpenUrl()
     }
   }, [])
 
@@ -340,6 +345,23 @@ export default function App(): JSX.Element {
     },
     [selectApp]
   )
+
+  // A web app opened a new tab: add it as an app in the current context (the
+  // active app's context, else the focused/first one), sharing that partition.
+  const openUrlInContext = useCallback(
+    (url: string) => {
+      const s = stateRef.current
+      if (!s) return
+      const targetId =
+        s.activeApp?.contextId ??
+        (focusedContextId && s.contexts.some((c) => c.id === focusedContextId)
+          ? focusedContextId
+          : s.contexts[0]?.id)
+      if (targetId) addApp(targetId, nameFromUrl(url), url, true)
+    },
+    [addApp, focusedContextId]
+  )
+  openUrlRef.current = openUrlInContext
 
   const renameContext = useCallback((contextId: string, name: string) => {
     setState((s) => {
