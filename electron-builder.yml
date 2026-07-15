@@ -10,6 +10,7 @@ asar: true
 npmRebuild: false
 mac:
   category: public.app-category.productivity
+  icon: build/icon.icns
   target:
     - dmg
     - zip

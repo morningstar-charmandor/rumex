@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f4f5"/>
+      <stop offset="1" stop-color="#e4e4e6"/>
+    </linearGradient>
+    <radialGradient id="bub" cx="0.4" cy="0.34" r="0.8">
+      <stop offset="0" stop-color="#383838"/>
+      <stop offset="1" stop-color="#242424"/>
+    </radialGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <g fill="url(#bub)">
+    <circle cx="430" cy="335" r="74"/>
+    <circle cx="602" cy="325" r="85"/>
+    <circle cx="512" cy="417" r="34"/>
+    <circle cx="380" cy="533" r="118"/>
+    <circle cx="648" cy="533" r="126"/>
+  </g>
+</svg>
