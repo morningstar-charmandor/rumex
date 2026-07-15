@@ -21,7 +21,7 @@ const CLIENT_STATE_FILE = 'client-state.json'
 const WINDOW_STATE_FILE = 'window-state.json'
 
 /** owner/repo whose GitHub Releases feed the update-available notice. */
-const UPDATE_REPO = 'morningstar-charmandor/Electron'
+const UPDATE_REPO = 'morningstar-charmandor/rumex'
 
 /** True if `remote` is a higher dotted version than `local` (e.g. 0.2.0 > 0.1.0). */
 function isNewerVersion(remote: string, local: string): boolean {

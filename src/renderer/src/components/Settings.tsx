@@ -298,7 +298,7 @@ export default function Settings(props: SettingsProps): JSX.Element {
               </p>
               <button
                 onClick={() =>
-                  props.onOpenExternal('https://github.com/morningstar-charmandor/Electron')
+                  props.onOpenExternal('https://github.com/morningstar-charmandor/rumex')
                 }
                 className="mt-4 rounded-lg px-3 py-1.5 text-[12px] text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50 dark:text-[#cfcdc5] dark:ring-[#302e2a] dark:hover:bg-[#232220]"
               >
