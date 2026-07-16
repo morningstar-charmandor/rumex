@@ -11,6 +11,8 @@ interface WorkspaceProps {
   /** Raw page title; App derives both the auto-name and the unread badge. */
   onTitle(contextId: string, appId: string, rawTitle: string): void
   onFavicon(contextId: string, appId: string): void
+  /** Top-level navigation; App lets browser-style apps follow the site. */
+  onNavigate(contextId: string, appId: string, url: string): void
   /** When set (and no app is active), show this context's Brief. */
   briefContext: WorkContext | null
   onSelectApp(contextId: string, appId: string): void
@@ -99,6 +101,7 @@ function AppView(props: {
   active: boolean
   onTitle(title: string): void
   onFavicon(): void
+  onNavigate(url: string): void
 }): JSX.Element {
   const ref = useRef<HTMLElement>(null)
   const [loading, setLoading] = useState(true)
@@ -106,6 +109,8 @@ function AppView(props: {
   onTitleRef.current = props.onTitle
   const onFaviconRef = useRef(props.onFavicon)
   onFaviconRef.current = props.onFavicon
+  const onNavigateRef = useRef(props.onNavigate)
+  onNavigateRef.current = props.onNavigate
 
   useEffect(() => {
     const view = ref.current
@@ -120,10 +125,17 @@ function AppView(props: {
     // webview event is unreliable (often never fires), so the main process
     // derives the icon from the app URL instead.
     const onDomReady = (): void => onFaviconRef.current()
+    // Top-level navigation (a real page load, not an in-page route change):
+    // report the new URL so browser-style apps can follow the site.
+    const onDidNavigate = (event: Event): void => {
+      const url = (event as Event & { url?: string }).url
+      if (url) onNavigateRef.current(url)
+    }
     view.addEventListener('did-start-loading', onStart)
     view.addEventListener('did-stop-loading', onStop)
     view.addEventListener('page-title-updated', onTitleUpdated)
     view.addEventListener('dom-ready', onDomReady)
+    view.addEventListener('did-navigate', onDidNavigate)
 
     // Electron's <webview> hosts the guest page in a shadow-DOM iframe that
     // can get stuck at a stale size (content renders cropped, the rest shows
@@ -146,6 +158,7 @@ function AppView(props: {
       view.removeEventListener('did-stop-loading', onStop)
       view.removeEventListener('page-title-updated', onTitleUpdated)
       view.removeEventListener('dom-ready', onDomReady)
+      view.removeEventListener('did-navigate', onDidNavigate)
       view.removeEventListener('dom-ready', fixGuestSize)
       observer.disconnect()
     }
@@ -199,6 +212,7 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
           active={activeKey === appKey(context.id, webApp.id)}
           onTitle={(title) => props.onTitle(context.id, webApp.id, title)}
           onFavicon={() => props.onFavicon(context.id, webApp.id)}
+          onNavigate={(url) => props.onNavigate(context.id, webApp.id, url)}
         />
       ))}
 
