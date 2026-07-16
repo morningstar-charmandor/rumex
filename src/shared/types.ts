@@ -2,6 +2,11 @@ export interface WebApp {
   id: string
   name: string
   url: string
+  /**
+   * Reuse another app's persistent session. This is used for pages opened by
+   * an app with target=_blank, so they remain signed in to the opener.
+   */
+  sessionPartition?: string
   /** Name was derived from the URL; replace it with the page title once loaded. */
   autoNamed?: boolean
   /** The site's favicon as a data URI, captured from the live page. */
@@ -132,4 +137,9 @@ export function isGoogleUrl(url: string): boolean {
  */
 export function partitionFor(contextId: string, appId: string): string {
   return `persist:ctx-${contextId}-app-${appId}`
+}
+
+/** The app's own partition, unless it was opened from another app's session. */
+export function partitionForApp(contextId: string, app: WebApp): string {
+  return app.sessionPartition ?? partitionFor(contextId, app.id)
 }

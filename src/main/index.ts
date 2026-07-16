@@ -133,7 +133,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: initialBackgroundColor(),
-    title: 'ContextWorkspace',
+    title: 'Rumex',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 13 },
     webPreferences: {
@@ -233,8 +233,26 @@ app.on('web-contents-created', (_event, contents) => {
         // the popup to Chrome mid-flight.
         app.userAgentFallback = FIREFOX_UA
         contents.once('did-create-window', (popup) => {
-          popup.webContents.once('did-navigate', () => {
+          let userAgentRestored = false
+          const restoreUserAgent = (): void => {
+            if (userAgentRestored) return
+            userAgentRestored = true
             app.userAgentFallback = CHROME_UA
+          }
+
+          popup.webContents.once('did-navigate', restoreUserAgent)
+          popup.on('closed', restoreUserAgent)
+
+          // Google finishes OAuth by redirecting this popup back to the app
+          // that started it (e.g. claude.ai). Those callback pages commonly
+          // render no document of their own, which otherwise leaves a blank
+          // "Welcome" window. The popup and opener share a partition, so the
+          // callback cookie is already available to the opener: reload it and
+          // close the completed OAuth window.
+          popup.webContents.on('did-navigate', (_event, navigatedUrl) => {
+            if (isGoogleUrl(navigatedUrl)) return
+            if (!contents.isDestroyed()) contents.reload()
+            if (!popup.isDestroyed()) popup.close()
           })
         })
       }

@@ -1,4 +1,4 @@
-# ContextWorkspace
+# Rumex
 
 A lightweight desktop app for running **multiple isolated instances of the same web apps** (Figma, Slack, Jira, Notion, …), grouped by project or client **Contexts** — with zero cookie leakage between them.
 
@@ -13,6 +13,8 @@ persist:ctx-<contextId>-app-<appId>
 ```
 
 Electron's `session.fromPartition` guarantees each partition is a fully separate storage universe. The main process enforces this in `will-attach-webview` — a webview without a `persist:` partition is refused. Removing an app (or a whole context) wipes its partition via `clearStorageData()` + `clearCache()`.
+
+Pages opened from an app with “open in new tab” deliberately reuse that app's partition, so they retain its authenticated session; independently added apps always receive their own partition.
 
 OAuth popups opened by a web app inherit that app's partition, so sign-in flows work while staying inside the sandbox.
 
@@ -38,7 +40,7 @@ Click a context's leading icon to open the **icon picker**: set a custom emoji, 
 
 ## Per-context Dock apps (macOS)
 
-Hover a context in the sidebar and click the **Add to Dock** icon: ContextWorkspace generates a real Mac app for that context in `~/Applications/ContextWorkspace Apps/` — own Dock tile, own name, own icon (pick an emoji, or keep the letter tile in the context color). Opening it shows a window with only that context's apps.
+Hover a context in the sidebar and click the **Add to Dock** icon: Rumex generates a real Mac app for that context in `~/Applications/ContextWorkspace Apps/` — own Dock tile, own name, own icon (pick an emoji, or keep the letter tile in the context color). Opening it shows a window with only that context's apps.
 
 How it works: the wrapper is an APFS copy-on-write clone of the app bundle (near-zero disk cost) whose app payload is a stub that pins `CW_CONTEXT_ID` and delegates to the real main entry. Client apps run with their own data directory (`~/Library/Application Support/ContextWorkspace-Clients/<contextId>`); on first launch the context's session partitions are **copied** from the main app so logins carry over. From then on the two stores are independent. (A symlinked `Contents/Frameworks` does not work — Electron SIGTRAPs on startup — hence the clone.)
 
