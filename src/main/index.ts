@@ -22,6 +22,8 @@ const WINDOW_STATE_FILE = 'window-state.json'
 
 /** owner/repo whose GitHub Releases feed the update-available notice. */
 const UPDATE_REPO = 'morningstar-charmandor/rumex'
+const GITHUB_API_VERSION = '2022-11-28'
+const GITHUB_USER_AGENT = `Rumex/${app.getVersion()} (${UPDATE_REPO})`
 
 /** True if `remote` is a higher dotted version than `local` (e.g. 0.2.0 > 0.1.0). */
 function isNewerVersion(remote: string, local: string): boolean {
@@ -442,10 +444,17 @@ if (!gotSingleInstanceLock) {
       const checkForUpdate = async (): Promise<void> => {
         try {
           const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
-            headers: { Accept: 'application/vnd.github+json' },
+            headers: {
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': GITHUB_API_VERSION,
+              'User-Agent': GITHUB_USER_AGENT
+            },
             signal: AbortSignal.timeout(8000)
           })
-          if (!res.ok) return
+          if (!res.ok) {
+            console.warn(`Update check failed: GitHub returned ${res.status} ${res.statusText}`)
+            return
+          }
           const data = (await res.json()) as { tag_name?: string; html_url?: string }
           const latest = (data.tag_name ?? '').replace(/^v/, '')
           if (latest && isNewerVersion(latest, app.getVersion()) && data.html_url) {
