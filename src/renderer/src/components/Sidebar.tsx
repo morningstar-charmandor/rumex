@@ -19,6 +19,7 @@ interface SidebarProps {
   onDeleteContext(contextId: string): void
   onRenameContext(contextId: string, name: string): void
   onRenameApp(contextId: string, appId: string, name: string): void
+  onReorderApp(contextId: string, from: number, to: number): void
   onCreateDockApp(contextId: string): void
   onSetContextIcon(
     contextId: string,
@@ -264,6 +265,10 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
   const [addingAppTo, setAddingAppTo] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<Renaming | null>(null)
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
+  // Drag-to-reorder apps within a context: the app being dragged and the row
+  // currently hovered as the drop target (both scoped to one context).
+  const [dragApp, setDragApp] = useState<{ contextId: string; index: number } | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
   const isMac = window.api.platform === 'darwin'
   const clientMode = window.api.clientContextId !== null
 
@@ -433,17 +438,52 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
 
               {isExpanded && (
                 <div className="mt-0.5 space-y-0.5">
-                  {context.apps.map((webApp) => {
+                  {context.apps.map((webApp, appIndex) => {
                     const isActive =
                       props.activeApp?.contextId === context.id &&
                       props.activeApp?.appId === webApp.id
                     const key = appKey(context.id, webApp.id)
                     const awake = props.openedKeys.has(key)
                     const mb = props.memory[key]
+                    const renamingThis = isRenamingApp(context.id, webApp.id)
+                    const dragging =
+                      dragApp?.contextId === context.id && dragApp.index === appIndex
+                    const isDropTarget =
+                      dragApp?.contextId === context.id &&
+                      dropIndex === appIndex &&
+                      dragApp.index !== appIndex
                     return (
                       <div
                         key={webApp.id}
+                        // Native HTML5 drag-and-drop; disabled while renaming so
+                        // the inline input stays selectable.
+                        draggable={!renamingThis}
+                        onDragStart={(e) => {
+                          setDragApp({ contextId: context.id, index: appIndex })
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragOver={(e) => {
+                          if (!dragApp || dragApp.contextId !== context.id) return
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                          setDropIndex(appIndex)
+                        }}
+                        onDrop={(e) => {
+                          if (!dragApp || dragApp.contextId !== context.id) return
+                          e.preventDefault()
+                          props.onReorderApp(context.id, dragApp.index, appIndex)
+                          setDragApp(null)
+                          setDropIndex(null)
+                        }}
+                        onDragEnd={() => {
+                          setDragApp(null)
+                          setDropIndex(null)
+                        }}
                         className={`group ml-4 flex items-center gap-1 rounded-md px-2 py-1.5 ${
+                          dragging ? 'opacity-50' : ''
+                        } ${
+                          isDropTarget ? 'ring-2 ring-inset ring-zinc-400 dark:ring-zinc-500' : ''
+                        } ${
                           isActive
                             ? 'bg-zinc-200 dark:bg-zinc-800/90'
                             : 'hover:bg-zinc-100 dark:hover:bg-zinc-900'

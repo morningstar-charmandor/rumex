@@ -383,6 +383,26 @@ export default function App(): JSX.Element {
   )
   openUrlRef.current = openUrlInContext
 
+  // Reorder an app within its context by moving it from one index to another.
+  // Dragging never crosses contexts (a partition is tied to its context).
+  const reorderApp = useCallback((contextId: string, from: number, to: number) => {
+    setState((s) => {
+      if (!s) return s
+      return {
+        ...s,
+        contexts: s.contexts.map((c) => {
+          if (c.id !== contextId) return c
+          if (from === to || from < 0 || to < 0 || from >= c.apps.length || to >= c.apps.length)
+            return c
+          const apps = [...c.apps]
+          const [moved] = apps.splice(from, 1)
+          apps.splice(to, 0, moved)
+          return { ...c, apps }
+        })
+      }
+    })
+  }, [])
+
   const renameContext = useCallback((contextId: string, name: string) => {
     setState((s) => {
       if (!s || !name.trim()) return s
@@ -656,6 +676,7 @@ export default function App(): JSX.Element {
         onDeleteContext={deleteContext}
         onRenameContext={renameContext}
         onRenameApp={renameApp}
+        onReorderApp={reorderApp}
         onCreateDockApp={createDockApp}
         onSetContextIcon={setContextIcon}
         openedKeys={openedKeys}
