@@ -445,7 +445,6 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     const key = appKey(context.id, webApp.id)
                     const awake = props.openedKeys.has(key)
                     const mb = props.memory[key]
-                    const renamingThis = isRenamingApp(context.id, webApp.id)
                     const dragging =
                       dragApp?.contextId === context.id && dragApp.index === appIndex
                     const isDropTarget =
@@ -455,13 +454,11 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     return (
                       <div
                         key={webApp.id}
-                        // Native HTML5 drag-and-drop; disabled while renaming so
-                        // the inline input stays selectable.
-                        draggable={!renamingThis}
-                        onDragStart={(e) => {
-                          setDragApp({ contextId: context.id, index: appIndex })
-                          e.dataTransfer.effectAllowed = 'move'
-                        }}
+                        // Drop target for drag-to-reorder. The drag itself is
+                        // started from the grip handle below (a plain, non-button
+                        // element): interactive <button> children swallow an
+                        // ancestor's native drag, so grabbing the app name — a
+                        // button — could never start one.
                         onDragOver={(e) => {
                           if (!dragApp || dragApp.contextId !== context.id) return
                           e.preventDefault()
@@ -472,10 +469,6 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           if (!dragApp || dragApp.contextId !== context.id) return
                           e.preventDefault()
                           props.onReorderApp(context.id, dragApp.index, appIndex)
-                          setDragApp(null)
-                          setDropIndex(null)
-                        }}
-                        onDragEnd={() => {
                           setDragApp(null)
                           setDropIndex(null)
                         }}
@@ -501,6 +494,33 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                           />
                         ) : (
                           <>
+                            {!clientMode && (
+                              <span
+                                draggable
+                                onDragStart={(e) => {
+                                  setDragApp({ contextId: context.id, index: appIndex })
+                                  e.dataTransfer.effectAllowed = 'move'
+                                  // Some engines only start a drag once data is set.
+                                  e.dataTransfer.setData('text/plain', webApp.id)
+                                }}
+                                onDragEnd={() => {
+                                  setDragApp(null)
+                                  setDropIndex(null)
+                                }}
+                                title="Drag to reorder"
+                                aria-label="Drag to reorder"
+                                className="-ml-1 flex h-5 w-3 shrink-0 cursor-grab items-center justify-center text-zinc-400 opacity-0 group-hover:opacity-100 active:cursor-grabbing dark:text-zinc-500"
+                              >
+                                <svg viewBox="0 0 10 16" className="h-3.5 w-2 fill-current" aria-hidden="true">
+                                  <circle cx="3" cy="4" r="1" />
+                                  <circle cx="7" cy="4" r="1" />
+                                  <circle cx="3" cy="8" r="1" />
+                                  <circle cx="7" cy="8" r="1" />
+                                  <circle cx="3" cy="12" r="1" />
+                                  <circle cx="7" cy="12" r="1" />
+                                </svg>
+                              </span>
+                            )}
                             <button
                               onClick={() => props.onSelectApp(context.id, webApp.id)}
                               onDoubleClick={() =>
