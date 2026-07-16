@@ -169,7 +169,7 @@ export default function Settings(props: SettingsProps): JSX.Element {
           {section === 'general' && (
             <>
               <SectionHeader>General</SectionHeader>
-              <Row label="Appearance" description="How ContextWorkspace looks">
+              <Row label="Appearance" description="How Rumex looks">
                 <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-[#262521]">
                   {appearanceOptions.map((o) => {
                     const active = props.theme === o.value
@@ -268,7 +268,7 @@ export default function Settings(props: SettingsProps): JSX.Element {
           {section === 'updates' && (
             <>
               <SectionHeader>Updates</SectionHeader>
-              <Row label="Current version" description="You're on this build of ContextWorkspace">
+              <Row label="Current version" description="You're on this build of Rumex">
                 <span className="text-[12px] text-zinc-600 dark:text-[#cfcdc5]">{props.appVersion}</span>
               </Row>
               <Row
@@ -289,7 +289,7 @@ export default function Settings(props: SettingsProps): JSX.Element {
           {section === 'about' && (
             <>
               <SectionHeader>About</SectionHeader>
-              <p className="text-[13px] text-zinc-800 dark:text-[#ededea]">ContextWorkspace</p>
+              <p className="text-[13px] text-zinc-800 dark:text-[#ededea]">Rumex</p>
               <p className="mt-1 text-[12px] text-zinc-500 dark:text-[#8a887f]">
                 A Context OS for your web apps — isolated workspaces per client or project.
               </p>

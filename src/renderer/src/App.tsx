@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
-import type { ActiveApp, AppState, Theme, UpdateInfo } from '../../shared/types'
-import { partitionFor } from '../../shared/types'
+import type { ActiveApp, AppState, Theme, UpdateInfo, WebApp } from '../../shared/types'
+import { partitionForApp } from '../../shared/types'
 import type { WebviewElement } from './env'
 import { renderIconPngBase64 } from './dockIcon'
 import { cleanTitle, nameFromUrl, parseBadge } from './catalog'
@@ -350,8 +350,20 @@ export default function App(): JSX.Element {
   }, [])
 
   const addApp = useCallback(
-    (contextId: string, name: string, url: string, autoNamed: boolean) => {
-      const application = { id: crypto.randomUUID(), name: name.trim(), url, autoNamed }
+    (
+      contextId: string,
+      name: string,
+      url: string,
+      autoNamed: boolean,
+      sessionPartition?: string
+    ) => {
+      const application: WebApp = {
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        url,
+        autoNamed,
+        sessionPartition
+      }
       setState((s) => {
         if (!s) return s
         return {
@@ -366,18 +378,28 @@ export default function App(): JSX.Element {
     [selectApp]
   )
 
-  // A web app opened a new tab: add it as an app in the current context (the
-  // active app's context, else the focused/first one), sharing that partition.
+  // A web app opened a new tab: add it to the opener's context and explicitly
+  // reuse the opener's partition, so its authenticated session carries over.
   const openUrlInContext = useCallback(
     (url: string) => {
       const s = stateRef.current
       if (!s) return
+      const opener = s.activeApp
       const targetId =
-        s.activeApp?.contextId ??
+        opener?.contextId ??
         (focusedContextId && s.contexts.some((c) => c.id === focusedContextId)
           ? focusedContextId
           : s.contexts[0]?.id)
-      if (targetId) addApp(targetId, nameFromUrl(url), url, true)
+      const openerApp = opener
+        ? s.contexts
+            .find((context) => context.id === opener.contextId)
+            ?.apps.find((app) => app.id === opener.appId)
+        : undefined
+      const openerPartition =
+        opener && openerApp ? partitionForApp(opener.contextId, openerApp) : undefined
+      if (targetId) {
+        addApp(targetId, nameFromUrl(url), url, true, openerPartition)
+      }
     },
     [addApp, focusedContextId]
   )
@@ -531,7 +553,6 @@ export default function App(): JSX.Element {
 
   const deleteApp = useCallback((contextId: string, appId: string) => {
     if (!window.confirm('Remove this app? Its isolated session data will be wiped.')) return
-    void window.api.clearPartition(partitionFor(contextId, appId))
     const key = appKey(contextId, appId)
     setOpenedKeys((prev) => {
       const next = new Set(prev)
@@ -540,6 +561,15 @@ export default function App(): JSX.Element {
     })
     setState((s) => {
       if (!s) return s
+      const context = s.contexts.find((c) => c.id === contextId)
+      const app = context?.apps.find((a) => a.id === appId)
+      const partition = app ? partitionForApp(contextId, app) : null
+      // A page opened in-app can share its opener's session. Only wipe that
+      // partition once no app in this context still references it.
+      const stillReferenced = context?.apps.some(
+        (a) => a.id !== appId && partition != null && partitionForApp(contextId, a) === partition
+      )
+      if (partition && !stillReferenced) void window.api.clearPartition(partition)
       const activeApp =
         s.activeApp?.contextId === contextId && s.activeApp?.appId === appId ? null : s.activeApp
       return {
@@ -558,7 +588,12 @@ export default function App(): JSX.Element {
     setState((s) => {
       if (!s) return s
       const target = s.contexts.find((c) => c.id === contextId)
-      target?.apps.forEach((a) => void window.api.clearPartition(partitionFor(contextId, a.id)))
+      // Clear each distinct partition once; a context can contain pages that
+      // deliberately share an opener's authenticated session.
+      const partitions = new Set(
+        target?.apps.map((app) => partitionForApp(contextId, app)) ?? []
+      )
+      partitions.forEach((partition) => void window.api.clearPartition(partition))
       setOpenedKeys((prev) => {
         const next = new Set(prev)
         target?.apps.forEach((a) => next.delete(appKey(contextId, a.id)))

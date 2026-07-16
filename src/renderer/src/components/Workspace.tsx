@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
-import { FIREFOX_UA, isGoogleUrl, partitionFor } from '../../../shared/types'
+import { FIREFOX_UA, isGoogleUrl, partitionForApp } from '../../../shared/types'
 import { appKey } from '../App'
 
 interface WorkspaceProps {
@@ -162,7 +162,7 @@ function AppView(props: {
         ref={ref}
         data-appkey={appKey(props.context.id, props.webApp.id)}
         src={props.webApp.url}
-        partition={partitionFor(props.context.id, props.webApp.id)}
+        partition={partitionForApp(props.context.id, props.webApp)}
         allowpopups={'true' as unknown as boolean}
         useragent={isGoogleUrl(props.webApp.url) ? FIREFOX_UA : window.api.userAgent}
       />
