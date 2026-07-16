@@ -28,6 +28,18 @@ export function appKey(contextId: string, appId: string): string {
 
 export const DEFAULT_SLEEP_MINUTES = 15
 
+// Adding an app opens a fresh, browser-style tab here; it then follows
+// wherever you navigate (name + favicon).
+export const NEW_APP_URL = 'https://www.google.com'
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
+
 function seedState(): AppState {
   const id = crypto.randomUUID()
   return {
@@ -366,6 +378,22 @@ export default function App(): JSX.Element {
     [selectApp]
   )
 
+  // "New app" = a fresh browser-style tab on Google. It's auto-named, so it
+  // renames itself and swaps its favicon as you browse (see handleTitle /
+  // handleNavigate) until you rename it by hand.
+  const addBlankApp = useCallback(
+    (contextId: string) => {
+      addApp(contextId, 'New app', NEW_APP_URL, true)
+      // Keep the context open so the new tab is visible in the sidebar.
+      setState((s) =>
+        s && !s.expanded.includes(contextId)
+          ? { ...s, expanded: [...s.expanded, contextId] }
+          : s
+      )
+    },
+    [addApp]
+  )
+
   // A web app opened a new tab: add it as an app in the current context (the
   // active app's context, else the focused/first one), sharing that partition.
   const openUrlInContext = useCallback(
@@ -510,7 +538,11 @@ export default function App(): JSX.Element {
       const app = s.contexts.find((c) => c.id === contextId)?.apps.find((a) => a.id === appId)
       if (!app) return s
       const adoptName = app.autoNamed ? cleanTitle(rawTitle).trim() : ''
-      if (app.badge === badge && !adoptName) return s
+      // While auto-named, keep following the page title so a browser-style tab
+      // renames itself as you move between sites. A manual rename sets
+      // autoNamed:false (in renameApp) and freezes the name.
+      const nameChanged = adoptName !== '' && adoptName !== app.name
+      if (app.badge === badge && !nameChanged) return s
       return {
         ...s,
         contexts: s.contexts.map((c) =>
@@ -522,7 +554,7 @@ export default function App(): JSX.Element {
                     ? {
                         ...a,
                         badge,
-                        ...(adoptName ? { name: adoptName, autoNamed: false } : {})
+                        ...(nameChanged ? { name: adoptName } : {})
                       }
                     : a
                 )
@@ -531,6 +563,47 @@ export default function App(): JSX.Element {
         )
       }
     })
+  }, [])
+
+  // As an auto-named (browser-style) app navigates, follow the site: remember
+  // the current URL so it reopens where you left off, and refresh the favicon
+  // when the host changes. Manually-named apps keep their fixed URL and icon.
+  const handleNavigate = useCallback((contextId: string, appId: string, url: string) => {
+    const app = stateRef.current?.contexts
+      .find((c) => c.id === contextId)
+      ?.apps.find((a) => a.id === appId)
+    if (!app || !app.autoNamed || app.url === url) return
+    const hostChanged = hostOf(app.url) !== hostOf(url)
+    setState((s) => {
+      if (!s) return s
+      return {
+        ...s,
+        contexts: s.contexts.map((c) =>
+          c.id === contextId
+            ? { ...c, apps: c.apps.map((a) => (a.id === appId ? { ...a, url } : a)) }
+            : c
+        )
+      }
+    })
+    if (hostChanged) {
+      window.api.fetchFavicon(url).then((dataUri) => {
+        if (!dataUri) return
+        setState((s) => {
+          if (!s) return s
+          return {
+            ...s,
+            contexts: s.contexts.map((c) =>
+              c.id === contextId
+                ? {
+                    ...c,
+                    apps: c.apps.map((a) => (a.id === appId ? { ...a, favicon: dataUri } : a))
+                  }
+                : c
+            )
+          }
+        })
+      })
+    }
   }, [])
 
   // Enter a context without a specific app: mark it visited and show its brief.
@@ -671,7 +744,7 @@ export default function App(): JSX.Element {
         onSelectApp={selectApp}
         onToggleExpanded={toggleExpanded}
         onAddContext={addContext}
-        onAddApp={addApp}
+        onAddBlankApp={addBlankApp}
         onDeleteApp={deleteApp}
         onDeleteContext={deleteContext}
         onRenameContext={renameContext}
@@ -692,6 +765,7 @@ export default function App(): JSX.Element {
         openedKeys={openedKeys}
         onTitle={handleTitle}
         onFavicon={captureFavicon}
+        onNavigate={handleNavigate}
         briefContext={
           !state.activeApp
             ? (state.contexts.find((c) => c.id === focusedContextId) ?? null)

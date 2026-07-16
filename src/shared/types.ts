@@ -125,6 +125,19 @@ export function isGoogleUrl(url: string): boolean {
   }
 }
 
+// Only Google's sign-in surfaces need the Firefox disguise. General Google
+// pages (e.g. www.google.com search) must present the real Chrome identity —
+// the Firefox-UA-on-Chromium mismatch makes reCAPTCHA loop forever.
+const GOOGLE_LOGIN_HOSTS = /^accounts\.(google|youtube)\.com$/
+
+export function isGoogleLoginUrl(url: string): boolean {
+  try {
+    return GOOGLE_LOGIN_HOSTS.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Every app instance gets its own persistent Electron session partition.
  * Two apps never share a partition, so cookies, localStorage, indexedDB

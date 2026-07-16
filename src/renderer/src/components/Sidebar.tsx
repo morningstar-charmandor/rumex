@@ -1,7 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { JSX, ReactNode } from 'react'
 import type { ActiveApp, MemoryUsage, WebApp, WorkContext } from '../../../shared/types'
-import { buildSuggestions } from '../catalog'
 import { appKey, type NavAction } from '../App'
 
 interface SidebarProps {
@@ -14,7 +13,7 @@ interface SidebarProps {
   onSelectApp(contextId: string, appId: string): void
   onToggleExpanded(contextId: string): void
   onAddContext(name: string): void
-  onAddApp(contextId: string, name: string, url: string, autoNamed: boolean): void
+  onAddBlankApp(contextId: string): void
   onDeleteApp(contextId: string, appId: string): void
   onDeleteContext(contextId: string): void
   onRenameContext(contextId: string, name: string): void
@@ -75,75 +74,6 @@ function InlineInput(props: {
       onClick={(e) => e.stopPropagation()}
       className="w-full min-w-0 rounded-md bg-zinc-200 px-2 py-1 text-[13px] text-zinc-900 placeholder-zinc-500 outline-none ring-1 ring-zinc-300 focus:ring-zinc-400 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:ring-zinc-500"
     />
-  )
-}
-
-/**
- * Single searchable input: matches a catalog of popular apps, accepts pasted
- * URLs, and falls back to guessing "<word>.com". The app name is derived
- * automatically (and later refined from the page title for URL guesses).
- */
-function AddAppForm(props: {
-  onSubmit(name: string, url: string, autoNamed: boolean): void
-  onCancel(): void
-}): JSX.Element {
-  const [query, setQuery] = useState('')
-  const [highlight, setHighlight] = useState(0)
-  const suggestions = useMemo(() => buildSuggestions(query), [query])
-  const selected = suggestions[Math.min(highlight, suggestions.length - 1)]
-
-  return (
-    <div
-      className="ml-4 flex flex-col gap-1 rounded-md bg-zinc-100 p-2 ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') props.onCancel()
-      }}
-    >
-      <input
-        autoFocus
-        value={query}
-        placeholder="Search apps or paste a URL…"
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setHighlight(0)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setHighlight((h) => Math.min(h + 1, suggestions.length - 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setHighlight((h) => Math.max(h - 1, 0))
-          } else if (e.key === 'Enter' && selected) {
-            props.onSubmit(selected.name, selected.url, selected.autoNamed)
-          }
-        }}
-        className="rounded bg-zinc-200 px-2 py-1 text-[13px] text-zinc-900 placeholder-zinc-500 outline-none ring-1 ring-zinc-300 focus:ring-zinc-400 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:ring-zinc-500"
-      />
-      <div className="flex flex-col">
-        {suggestions.map((s, i) => (
-          <button
-            key={`${s.url}-${s.name}`}
-            onMouseEnter={() => setHighlight(i)}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              props.onSubmit(s.name, s.url, s.autoNamed)
-            }}
-            className={`flex items-baseline gap-2 rounded px-2 py-1 text-left ${
-              i === highlight ? 'bg-zinc-200 dark:bg-zinc-800' : ''
-            }`}
-          >
-            <span className="truncate text-[13px] text-zinc-700 dark:text-zinc-200">{s.name}</span>
-            <span className="ml-auto shrink-0 text-[11px] text-zinc-500">{s.hint}</span>
-          </button>
-        ))}
-        {suggestions.length === 0 && (
-          <span className="px-2 py-1 text-[12px] text-zinc-400 dark:text-zinc-600">
-            Keep typing, or paste a full URL
-          </span>
-        )}
-      </div>
-    </div>
   )
 }
 
@@ -262,7 +192,6 @@ function ContextIconPicker(props: {
 
 export default function Sidebar(props: SidebarProps): JSX.Element {
   const [addingContext, setAddingContext] = useState(false)
-  const [addingAppTo, setAddingAppTo] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<Renaming | null>(null)
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
   // Drag-to-reorder apps within a context: the app being dragged and the row
@@ -390,10 +319,10 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     </button>
                     <button
                       onClick={() => {
-                        setAddingAppTo(context.id)
                         if (!isExpanded) props.onToggleExpanded(context.id)
+                        props.onAddBlankApp(context.id)
                       }}
-                      title="Add app"
+                      title="New app (opens Google)"
                       className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                     >
                       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
@@ -613,22 +542,12 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     )
                   })}
 
-                  {addingAppTo === context.id && (
-                    <AddAppForm
-                      onSubmit={(name, url, autoNamed) => {
-                        props.onAddApp(context.id, name, url, autoNamed)
-                        setAddingAppTo(null)
-                      }}
-                      onCancel={() => setAddingAppTo(null)}
-                    />
-                  )}
-
-                  {context.apps.length === 0 && addingAppTo !== context.id && (
+                  {context.apps.length === 0 && (
                     <button
-                      onClick={() => setAddingAppTo(context.id)}
+                      onClick={() => props.onAddBlankApp(context.id)}
                       className="ml-4 w-[calc(100%-1rem)] rounded-md px-2 py-1.5 text-left text-[12px] text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-400"
                     >
-                      + Add an app…
+                      + New app…
                     </button>
                   )}
                 </div>
