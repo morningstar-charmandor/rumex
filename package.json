@@ -1,5 +1,5 @@
 {
-  "name": "contextworkspace",
+  "name": "rumex",
   "version": "0.2.0",
   "description": "Manage isolated instances of web apps across project and client contexts",
   "main": "./out/main/index.js",

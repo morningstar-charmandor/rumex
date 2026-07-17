@@ -1,4 +1,4 @@
-appId: com.contextworkspace.app
+appId: com.rumex.app
 productName: Rumex
 directories:
   buildResources: build

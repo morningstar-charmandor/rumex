@@ -26,7 +26,7 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
     return { ok: false, error: 'Dock apps are only supported on macOS for now' }
   }
   try {
-    const appsDir = join(app.getPath('home'), 'Applications', 'ContextWorkspace Apps')
+    const appsDir = join(app.getPath('home'), 'Applications', 'Rumex Apps')
     const safeName = request.contextName.replace(/[/:]+/g, '-').trim() || 'Context'
     const bundle = join(appsDir, `${safeName}.app`)
     // Assemble in a temp bundle, then swap it into place. Cloning straight
@@ -60,8 +60,8 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
     writeFileSync(
       join(stubDir, 'package.json'),
       JSON.stringify({
-        name: 'contextworkspace',
-        productName: 'contextworkspace',
+        name: 'rumex',
+        productName: 'rumex',
         version: app.getVersion() || '0.1.0',
         main: 'index.js',
         private: true
@@ -83,7 +83,7 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
     const plutil = (key: string, value: string): void => {
       execFileSync('plutil', ['-replace', key, '-string', value, plistPath], { stdio: 'ignore' })
     }
-    plutil('CFBundleIdentifier', `com.contextworkspace.client.${request.contextId}`)
+    plutil('CFBundleIdentifier', `com.rumex.client.${request.contextId}`)
     plutil('CFBundleDisplayName', safeName)
     plutil('CFBundleIconFile', 'icon.icns')
 

@@ -49,7 +49,7 @@ const mainAppUserData = process.env['CW_MAIN_USERDATA'] ?? null
 if (clientContextId) {
   app.setPath(
     'userData',
-    join(app.getPath('appData'), 'ContextWorkspace-Clients', clientContextId)
+    join(app.getPath('appData'), 'Rumex-Clients', clientContextId)
   )
 }
 
@@ -59,12 +59,31 @@ if (clientContextId) {
 // the only point a popup's navigator.userAgent can be set (see the
 // window-open handler, where it is briefly swapped to Firefox for Google).
 const RAW_UA = app.userAgentFallback
-const CHROME_UA = RAW_UA.replace(/\sElectron\/\S+/i, '').replace(/\scontextworkspace\/\S+/i, '')
+const CHROME_UA = RAW_UA.replace(/\sElectron\/\S+/i, '').replace(/\srumex\/\S+/i, '')
 // Honest sign-in UA: strip ONLY the Electron token, KEEPING the app token. This
 // matches the standalone tester that Google accepted (login-test/FINDINGS.md) —
 // the fully-cleaned CHROME_UA (a "pure Chrome" claim) is what Google rejects.
 const LOGIN_HONEST_UA = RAW_UA.replace(/\sElectron\/\S+/i, '')
 app.userAgentFallback = CHROME_UA
+
+// One-time data migration for the rename to the internal name "rumex". The app's
+// data folder and its saved-login encryption key are named after the app, so a
+// first launch under the new name would otherwise look empty. Copy the old
+// "contextworkspace" data folder across (contexts, app list and settings carry
+// over; saved logins are locked to the old name and are re-entered once). We
+// COPY, never move, so the original folder stays intact as a fallback. Main app
+// only — Dock/client apps have their own per-context folders.
+if (!clientContextId) {
+  try {
+    const newUserData = app.getPath('userData')
+    const legacyUserData = join(app.getPath('appData'), 'contextworkspace')
+    if (!existsSync(newUserData) && existsSync(legacyUserData)) {
+      cpSync(legacyUserData, newUserData, { recursive: true })
+    }
+  } catch {
+    // If the copy fails the app just starts fresh; the old folder is untouched.
+  }
+}
 
 /** The state file every process reads contexts/apps from (main app's copy). */
 function sharedStatePath(): string {
