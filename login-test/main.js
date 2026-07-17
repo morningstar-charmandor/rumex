@@ -66,9 +66,10 @@ function makeWindow(label, userAgent, x) {
     height: 820,
     title: label + ' - loading...',
     webPreferences: {
-      // A separate private area per window so you can sign in to each one
-      // independently, and nothing is shared or copied between them.
-      partition: 'persist:test-' + label.toLowerCase().replace(/[^a-z]/g, ''),
+      // A separate, TEMPORARY private area per window: the two windows never
+      // share anything, and every launch starts logged-out and clean (nothing
+      // is remembered between runs). That makes each run a real, fair test.
+      partition: 'test-' + label.toLowerCase().replace(/[^a-z]/g, ''),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true
