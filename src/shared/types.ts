@@ -35,7 +35,7 @@ export type Theme = 'light' | 'dark' | 'system'
 export interface Settings {
   /** Minutes of inactivity before an app auto-sleeps; 0 disables auto-sleep. */
   sleepAfterMinutes?: number
-  /** Launch ContextWorkspace automatically at macOS login. */
+  /** Launch Rumex automatically at macOS login. */
   openAtLogin?: boolean
 }
 
@@ -120,6 +120,21 @@ const GOOGLE_HOSTS = /(^|\.)(google|youtube)\.com$/
 export function isGoogleUrl(url: string): boolean {
   try {
     return GOOGLE_HOSTS.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A Google *sign-in* URL specifically (the accounts host on a login path), as
+ * opposed to any Google URL. Used to hand embedded-app logins off to the honest
+ * top-level sign-in window instead of letting the disguised webview attempt them.
+ */
+export function isGoogleSignInUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    if (u.hostname !== 'accounts.google.com' && u.hostname !== 'accounts.youtube.com') return false
+    return /\/(signin|servicelogin|v3\/signin|o\/oauth2|accountchooser)/i.test(u.pathname)
   } catch {
     return false
   }

@@ -6,7 +6,7 @@ import type { Api, AppState, UpdateInfo } from '../shared/types'
 // UA string is handed to the webviews.
 const userAgent = navigator.userAgent
   .replace(/\sElectron\/\S+/i, '')
-  .replace(/\scontextworkspace\/\S+/i, '')
+  .replace(/\srumex\/\S+/i, '')
 
 const api: Api = {
   loadState: () => ipcRenderer.invoke('state:load') as Promise<AppState | null>,

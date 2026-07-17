@@ -13,8 +13,9 @@ import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
-import { FIREFOX_UA, isGoogleUrl } from '../shared/types'
+import { FIREFOX_UA, isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
+import { openHonestLoginWindow } from './loginWindow'
 
 const APP_STATE_FILE = 'app-state.json'
 const CLIENT_STATE_FILE = 'client-state.json'
@@ -48,7 +49,7 @@ const mainAppUserData = process.env['CW_MAIN_USERDATA'] ?? null
 if (clientContextId) {
   app.setPath(
     'userData',
-    join(app.getPath('appData'), 'ContextWorkspace-Clients', clientContextId)
+    join(app.getPath('appData'), 'Rumex-Clients', clientContextId)
   )
 }
 
@@ -57,10 +58,32 @@ if (clientContextId) {
 // normally, Firefox for Google apps); popups inherit it at birth — which is
 // the only point a popup's navigator.userAgent can be set (see the
 // window-open handler, where it is briefly swapped to Firefox for Google).
-const CHROME_UA = app.userAgentFallback
-  .replace(/\sElectron\/\S+/i, '')
-  .replace(/\scontextworkspace\/\S+/i, '')
+const RAW_UA = app.userAgentFallback
+const CHROME_UA = RAW_UA.replace(/\sElectron\/\S+/i, '').replace(/\srumex\/\S+/i, '')
+// Honest sign-in UA: strip ONLY the Electron token, KEEPING the app token. This
+// matches the standalone tester that Google accepted (login-test/FINDINGS.md) —
+// the fully-cleaned CHROME_UA (a "pure Chrome" claim) is what Google rejects.
+const LOGIN_HONEST_UA = RAW_UA.replace(/\sElectron\/\S+/i, '')
 app.userAgentFallback = CHROME_UA
+
+// One-time data migration for the rename to the internal name "rumex". The app's
+// data folder and its saved-login encryption key are named after the app, so a
+// first launch under the new name would otherwise look empty. Copy the old
+// "contextworkspace" data folder across (contexts, app list and settings carry
+// over; saved logins are locked to the old name and are re-entered once). We
+// COPY, never move, so the original folder stays intact as a fallback. Main app
+// only — Dock/client apps have their own per-context folders.
+if (!clientContextId) {
+  try {
+    const newUserData = app.getPath('userData')
+    const legacyUserData = join(app.getPath('appData'), 'contextworkspace')
+    if (!existsSync(newUserData) && existsSync(legacyUserData)) {
+      cpSync(legacyUserData, newUserData, { recursive: true })
+    }
+  } catch {
+    // If the copy fails the app just starts fresh; the old folder is untouched.
+  }
+}
 
 /** The state file every process reads contexts/apps from (main app's copy). */
 function sharedStatePath(): string {
@@ -135,7 +158,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: initialBackgroundColor(),
-    title: 'ContextWorkspace',
+    title: 'Rumex',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 13 },
     webPreferences: {
@@ -201,6 +224,63 @@ app.on('web-contents-created', (_event, contents) => {
     } else if (input.key === ',') {
       event.preventDefault()
       win.webContents.send('settings:toggle')
+    }
+  })
+
+  // Honest Google sign-in (EXPERIMENT — matches the standalone tester that
+  // Google accepted). When a Google web-app's webview is about to load a Google
+  // *sign-in* page, cancel that navigation and complete sign-in in a real
+  // top-level window with our honest identity (LOGIN_HONEST_UA), sharing this
+  // webview's own session; on success, send the app to Google's post-login
+  // destination, now authenticated. For this experiment the Firefox disguise is
+  // switched off (the Google webview uses the honest UA — see Workspace.tsx).
+  let honestLoginOpen = false
+  // After a login window closes, briefly ignore further sign-in navigations so a
+  // page that bounces back to sign-in can't reopen the window in a flicker loop.
+  let suppressUntil = 0
+  // The app's real URL, so we can return the panel there after login instead of
+  // stranding it on a blank page. Captured from the first/main navigation that
+  // isn't itself a sign-in URL (a redirect to sign-in never overwrites it).
+  let appUrl = ''
+  contents.on('did-start-navigation', (_e, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame && /^https?:\/\//i.test(url) && !isGoogleSignInUrl(url)) appUrl = url
+  })
+  const startHonestLogin = (signInUrl: string): void => {
+    if (honestLoginOpen || Date.now() < suppressUntil) return
+    honestLoginOpen = true
+    let dest: string | null = null
+    try {
+      dest = new URL(signInUrl).searchParams.get('continue')
+    } catch {
+      dest = null
+    }
+    const loginWin = openHonestLoginWindow({
+      parent: mainWindow,
+      session: contents.session,
+      userAgent: LOGIN_HONEST_UA,
+      startUrl: signInUrl,
+      onSuccess: () => {
+        if (contents.isDestroyed()) return
+        const back = appUrl || dest
+        if (back) void contents.loadURL(back)
+        else contents.reload()
+      }
+    })
+    loginWin.on('closed', () => {
+      honestLoginOpen = false
+      suppressUntil = Date.now() + 12000
+    })
+  }
+  const cancelSignInNav = (event: Electron.Event, url: string): void => {
+    if (!isGoogleSignInUrl(url) || honestLoginOpen || Date.now() < suppressUntil) return
+    event.preventDefault()
+    startHonestLogin(url)
+  }
+  contents.on('will-redirect', cancelSignInNav)
+  contents.on('will-navigate', cancelSignInNav)
+  contents.on('did-navigate', (_event, url) => {
+    if (!honestLoginOpen && Date.now() >= suppressUntil && isGoogleSignInUrl(url)) {
+      startHonestLogin(url)
     }
   })
 
