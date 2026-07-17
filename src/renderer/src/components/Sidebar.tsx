@@ -390,10 +390,13 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     </button>
                     <button
                       onClick={() => {
-                        setAddingAppTo(context.id)
+                        // Quick "new tab": add a Google app and open it immediately,
+                        // skipping the picker. (The picker stays on the
+                        // "＋ Add an app…" row below for adding other apps.)
+                        props.onAddApp(context.id, 'Google', 'https://www.google.com', false)
                         if (!isExpanded) props.onToggleExpanded(context.id)
                       }}
-                      title="Add app"
+                      title="New Google tab"
                       className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                     >
                       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
@@ -623,7 +626,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                     />
                   )}
 
-                  {context.apps.length === 0 && addingAppTo !== context.id && (
+                  {addingAppTo !== context.id && (
                     <button
                       onClick={() => setAddingAppTo(context.id)}
                       className="ml-4 w-[calc(100%-1rem)] rounded-md px-2 py-1.5 text-left text-[12px] text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-400"
