@@ -13,8 +13,9 @@ import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
-import { FIREFOX_UA, isGoogleUrl } from '../shared/types'
+import { FIREFOX_UA, isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
+import { openHonestLoginWindow } from './loginWindow'
 
 const APP_STATE_FILE = 'app-state.json'
 const CLIENT_STATE_FILE = 'client-state.json'
@@ -203,6 +204,33 @@ app.on('web-contents-created', (_event, contents) => {
       win.webContents.send('settings:toggle')
     }
   })
+
+  // Honest Google sign-in. When a Google web-app's webview heads to a Google
+  // *sign-in* page, don't let it attempt the login behind the Firefox disguise
+  // (which testing showed fails outright for Workspace/business accounts —
+  // see login-test/FINDINGS.md). Instead complete sign-in in a real top-level
+  // window presenting our honest Chrome identity, sharing this webview's own
+  // session, then reload the app — now authenticated. The Firefox UA stays in
+  // place for the running app and for third-party OAuth popups as a fallback.
+  let honestLoginOpen = false
+  const maybeHonestLogin = (url: string): void => {
+    if (honestLoginOpen || !isGoogleSignInUrl(url)) return
+    honestLoginOpen = true
+    const loginWin = openHonestLoginWindow({
+      parent: mainWindow,
+      session: contents.session,
+      userAgent: CHROME_UA,
+      startUrl: url,
+      onSuccess: () => {
+        if (!contents.isDestroyed()) contents.reload()
+      }
+    })
+    loginWin.on('closed', () => {
+      honestLoginOpen = false
+    })
+  }
+  contents.on('did-redirect-navigation', (_event, url) => maybeHonestLogin(url))
+  contents.on('did-navigate', (_event, url) => maybeHonestLogin(url))
 
   // Popups (OAuth sign-in flows etc.) are allowed and automatically inherit
   // the opener webview's isolated session partition. Anything non-http(s) is

@@ -126,6 +126,21 @@ export function isGoogleUrl(url: string): boolean {
 }
 
 /**
+ * A Google *sign-in* URL specifically (the accounts host on a login path), as
+ * opposed to any Google URL. Used to hand embedded-app logins off to the honest
+ * top-level sign-in window instead of letting the disguised webview attempt them.
+ */
+export function isGoogleSignInUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    if (u.hostname !== 'accounts.google.com' && u.hostname !== 'accounts.youtube.com') return false
+    return /\/(signin|servicelogin|v3\/signin|o\/oauth2|accountchooser)/i.test(u.pathname)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Every app instance gets its own persistent Electron session partition.
  * Two apps never share a partition, so cookies, localStorage, indexedDB
  * and cache are fully isolated between contexts (and between apps).
