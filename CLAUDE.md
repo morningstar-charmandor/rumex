@@ -4,26 +4,22 @@ Read `BLUEPRINT.md` first — it is the authoritative architecture + gotcha guid
 
 ## Google / Gmail sign-in — remember this
 
-- **Honest top-level login window (2026-07).** Google sign-in for embedded Google
-  apps is done in a dedicated **honest** top-level window (`src/main/loginWindow.ts`,
-  wired from `src/main/index.ts` via `isGoogleSignInUrl`), NOT inside the app's
-  `<webview>`. It presents our real Chrome UA (no disguise), shares the app's
-  session, and reloads the app once signed in.
-- **Why:** empirical A/B testing (`login-test/`, results in
-  `login-test/FINDINGS.md`) showed the honest identity signs in reliably —
-  including Google **Workspace / custom-domain** accounts, where the old Firefox
-  disguise **fails outright**. Honest was 5/5; Firefox failed on every non-Gmail
-  business account.
-- **Do NOT** remove the `FIREFOX_UA` disguise from the running app webview or the
-  OAuth popups — those surfaces are untested and the embedded webview was the
-  original failing case. The honest win is specific to the top-level login window.
-- **Still to verify by running the real app on a home machine:** the wired-in
-  end-to-end flow (honest window → cookie in the app's partition → embedded app
-  loads signed in). The cloud/datacenter environment cannot test Google login
-  (datacenter IP is blocked by Google for unrelated reasons).
-
-## The standalone test harness
-
-`login-test/` is a self-contained two-window A/B tester (honest UA vs Firefox UA)
-with plain-English run instructions in `login-test/HOW-TO-RUN.md`. Keep it; it's
-how the sign-in behaviour is verified on a real machine.
+- **The WORKING login is the embedded Firefox webview** (BLUEPRINT §5.13):
+  Google web-app webviews present `FIREFOX_UA`, and sign-in works this way in the
+  real app. Do not remove or bypass it.
+- **A dedicated "honest" top-level login window was tried and REJECTED by Google**
+  in the real app (`accounts.google.com/v3/signin/rejected`, "browser or app may
+  not be secure"). It was reverted. The code (`src/main/loginWindow.ts`,
+  `isGoogleSignInUrl`) is left in the tree but is **NOT wired in**.
+- **Why the earlier standalone test (`login-test/`) was misleading:** it reported
+  "honest UA works 5/5", but it was NOT equivalent to the app — it sent a
+  different UA string (its app-name token survived the strip regex, so it was not
+  the clean-Chrome UA the app actually sends) and used a top-level `BrowserWindow`
+  rather than a `WebContentsView`. See `login-test/FINDINGS.md` → "CORRECTION".
+- **Lesson:** before trusting any sign-in test, confirm it sends the *identical*
+  UA string the real app would send, on the *same* kind of surface. Google
+  rejects a clean-Chrome UA (the Chrome cross-check); that is the whole reason the
+  Firefox disguise exists.
+- **This environment cannot test Google login:** datacenter IP is blocked by
+  Google, browser egress is proxied/blocked, and the Electron binary download is
+  blocked. Real verification must happen on a home machine.

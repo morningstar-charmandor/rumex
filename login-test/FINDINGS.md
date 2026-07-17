@@ -91,3 +91,35 @@ belongs to the new dedicated-window design only.
 Still to verify by running the real app: the wired-in end-to-end flow, and
 whether the honest window can eventually replace the Firefox disguise for the
 running Gmail webview too (not attempted here — untested surface).
+
+## ⚠️ CORRECTION (2026-07-17, after wiring it into the real app)
+
+The wired-in honest window was tried in the real app and **Google REJECTED it**
+(`accounts.google.com/v3/signin/rejected`, "This browser or app may not be
+secure"). Meanwhile the owner confirmed the **existing embedded Firefox webview
+login WORKS** in the real app. So in the real product the result is the *opposite*
+of the standalone tester.
+
+Root cause of the misleading test — the tester was **not equivalent** to the app:
+
+1. **Different UA string.** The Electron UA carries an `<appName>/<version>` token.
+   The tester's app name is `rumex-login-test`, and its strip rule `/\srumex\//`
+   does NOT match `rumex-login-test/`, so that token **stayed** — the tester's
+   "honest" UA was `…) rumex-login-test/1.0.0 Chrome/<v> Safari/537.36`. The real
+   app (name `contextworkspace`) strips its token cleanly, sending a **pure Chrome
+   UA** `…) Chrome/<v> Safari/537.36`. The clean-Chrome UA is exactly what Google
+   cross-checks and rejects (the original BLUEPRINT §5.13 claim). **The tester
+   never actually tested the UA the app sends.**
+2. **Different surface.** The tester loaded Google in a top-level `BrowserWindow`
+   webContents; the app loaded it in a `WebContentsView`. Also a candidate cause;
+   could not be isolated from here (this datacenter box can't reach Google
+   interactively and the Electron binary download is blocked).
+
+**Action taken:** the login hijack in `src/main/index.ts` was **reverted** — the
+app uses the working Firefox webview login again. `src/main/loginWindow.ts` and
+`isGoogleSignInUrl` remain in the tree but are **not wired in**.
+
+**If revisiting:** first make the tester a true apples-to-apples match for the app
+(same clean-Chrome UA AND same surface), re-run the A/B, and only then wire
+anything in. Do not trust a green tester result again until it sends the identical
+UA string the app would send.
