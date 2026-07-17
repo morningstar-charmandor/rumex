@@ -35,7 +35,7 @@ export type Theme = 'light' | 'dark' | 'system'
 export interface Settings {
   /** Minutes of inactivity before an app auto-sleeps; 0 disables auto-sleep. */
   sleepAfterMinutes?: number
-  /** Launch ContextWorkspace automatically at macOS login. */
+  /** Launch Rumex automatically at macOS login. */
   openAtLogin?: boolean
 }
 

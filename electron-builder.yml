@@ -1,5 +1,5 @@
 appId: com.contextworkspace.app
-productName: ContextWorkspace
+productName: Rumex
 directories:
   buildResources: build
   output: dist

@@ -284,7 +284,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
         <span className="truncate text-[13px] font-semibold tracking-wide text-zinc-500 dark:text-zinc-400">
           {clientMode
             ? `${props.contexts[0]?.icon ? `${props.contexts[0].icon} ` : ''}${props.contexts[0]?.name ?? 'Workspace'}`
-            : 'ContextWorkspace'}
+            : 'Rumex'}
         </span>
       </div>
 

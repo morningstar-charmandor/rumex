@@ -39,7 +39,7 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
     const plistPath = join(contents, 'Info.plist')
 
     // e.g. …/node_modules/electron/dist/Electron.app (dev) or the installed
-    // ContextWorkspace.app (packaged).
+    // Rumex.app (packaged).
     const sourceBundle = resolve(process.execPath, '..', '..', '..')
 
     mkdirSync(appsDir, { recursive: true })

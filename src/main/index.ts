@@ -139,7 +139,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: initialBackgroundColor(),
-    title: 'ContextWorkspace',
+    title: 'Rumex',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 13 },
     webPreferences: {
