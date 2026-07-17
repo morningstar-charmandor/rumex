@@ -123,3 +123,29 @@ app uses the working Firefox webview login again. `src/main/loginWindow.ts` and
 (same clean-Chrome UA AND same surface), re-run the A/B, and only then wire
 anything in. Do not trust a green tester result again until it sends the identical
 UA string the app would send.
+
+## ✅ RESOLUTION (2026-07-17) — it works
+
+After the correction above, the honest window was rebuilt to match the surface
+that Google accepts and re-tested in the real app. **On the owner's machine every
+account signed in — personal `@gmail.com` and Google Workspace/custom-domain
+accounts alike** (the latter never worked through the Firefox disguise).
+
+What made the difference:
+
+1. **UA: strip only the Electron token, KEEP the app token** (`LOGIN_HONEST_UA`).
+   The fully-cleaned pure-Chrome UA is what Google rejects; keeping the app token
+   (as the tester accidentally did) is accepted.
+2. **Top-level `BrowserWindow` webContents** for the Google page (not a
+   `WebContentsView`).
+
+Two follow-up bugs were then fixed to make it usable in the app:
+
+- **Blank panel after login:** the panel was left on `about:blank`; now the app's
+  real URL is captured (`did-start-navigation`) and restored on success.
+- **Sign-in popup flicker loop:** a re-challenge kept reopening the window; a 12s
+  cooldown after the window closes breaks the loop.
+
+Current state: honest window is the active Google sign-in path; Firefox disguise
+switched off for Google webviews (still a fallback for third-party OAuth popups).
+Remaining polish is noted in `CLAUDE.md`.
