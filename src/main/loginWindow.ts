@@ -1,26 +1,19 @@
-import { BrowserWindow, WebContentsView, screen } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import type { Session, Cookie } from 'electron'
 
-// A dedicated, HONEST Google sign-in window.
-//
-// Background: Google refuses sign-in from anything it can tell is an embedded
-// browser, which is why the app otherwise presents a Firefox user-agent on
-// Google surfaces (see BLUEPRINT §5.13). But testing (see login-test/FINDINGS.md)
-// showed that a *real top-level browser window* presenting our HONEST identity
-// (plain Chrome UA, no disguise) signs in reliably — including Google Workspace
-// / custom-domain accounts, where the Firefox disguise actually FAILS.
-//
-// So for Google sign-in we open this window: the Google login page runs in a
-// top-level WebContentsView (not an embedded <webview> guest — that top-level
-// nature is what the test validated), presenting the honest Chrome UA, sharing
-// the app's own session so the login cookie lands in the right place. A slim
-// read-only bar above it shows the real address and a lock, so the user can see
-// they are on the genuine Google page. We never inject into or read the Google
-// page itself — completion is detected only from the session's cookie store and
-// the top-level URL. Once signed in, the window closes and the app is reloaded,
-// already authenticated.
-
-const CHROME_HEIGHT = 52
+// A dedicated, HONEST Google sign-in window — built to match the standalone
+// tester (login-test/) as closely as possible, since that is the configuration
+// Google accepted on a real machine:
+//   • the Google page loads in the window's OWN top-level webContents (a plain
+//     BrowserWindow surface — NOT an embedded WebContentsView/webview guest),
+//   • it presents an honest user agent that keeps the app token and strips only
+//     the Electron token (passed in as `userAgent`),
+//   • it shares the app's own session so the login cookie lands in the right
+//     partition.
+// The real address is shown in the window's title bar (like the tester). We never
+// inject into or read the Google page; completion is detected only from the
+// session's auth cookie and the top-level URL. On success the window closes and
+// the caller reloads the app, now authenticated.
 
 /** The Google session cookies that only exist once a user is actually signed in. */
 function isGoogleAuthCookie(c: Cookie): boolean {
@@ -39,45 +32,14 @@ function isPostLoginUrl(url: string): boolean {
   }
 }
 
-/** The read-only address bar shown above the Google page. Trusted, local, no network. */
-function chromeHtml(): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-    :root { color-scheme: light dark; }
-    * { box-sizing: border-box; }
-    html,body { margin:0; height:100%; }
-    body {
-      display:flex; align-items:center; gap:8px; padding:0 12px; height:100%;
-      font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      background:#f3f3f4; color:#3c4043; border-bottom:1px solid #dadce0; user-select:none;
-    }
-    @media (prefers-color-scheme: dark) {
-      body { background:#202124; color:#e8eaed; border-bottom-color:#3c4043; }
-    }
-    #lock { flex:none; opacity:.75; }
-    #addr { flex:1; min-width:0; display:flex; align-items:baseline; gap:1px; overflow:hidden; white-space:nowrap; }
-    #host { font-weight:600; }
-    #rest { opacity:.55; overflow:hidden; text-overflow:ellipsis; }
-    #tag { flex:none; font-size:11px; opacity:.55; }
-  </style></head><body>
-    <svg id="lock" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
-    </svg>
-    <div id="addr"><span id="host"></span><span id="rest"></span></div>
-    <span id="tag">Secure Google sign-in</span>
-    <script>
-      window.__setBar = function (s) {
-        try {
-          var u = new URL(s.url);
-          document.getElementById('host').textContent = u.hostname;
-          document.getElementById('rest').textContent = u.pathname === '/' ? '' : u.pathname;
-          document.getElementById('lock').style.opacity = s.secure ? '0.75' : '0.2';
-        } catch (e) {
-          document.getElementById('host').textContent = s.url || '';
-          document.getElementById('rest').textContent = '';
-        }
-      };
-    </script>
-  </body></html>`
+/** "accounts.google.com/v3/signin" from a full URL, for the title bar. */
+function hostPath(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.hostname + (u.pathname === '/' ? '' : u.pathname)
+  } catch {
+    return url
+  }
 }
 
 interface LoginWindowOptions {
@@ -85,7 +47,7 @@ interface LoginWindowOptions {
   parent: BrowserWindow | null
   /** The exact session of the app that needs to sign in — so the cookie lands there. */
   session: Session
-  /** The HONEST user agent (plain Chrome, no disguise). */
+  /** The HONEST user agent (app token kept, only the Electron token stripped). */
   userAgent: string
   /** The Google sign-in URL the app was heading to (keeps its `continue=` target). */
   startUrl: string
@@ -95,64 +57,32 @@ interface LoginWindowOptions {
 
 /** Open the honest Google sign-in window. Returns the window (closes itself on success). */
 export function openHonestLoginWindow(opts: LoginWindowOptions): BrowserWindow {
-  const bounds = centeredBounds(opts.parent)
   const win = new BrowserWindow({
-    ...bounds,
+    ...centeredBounds(opts.parent),
     parent: opts.parent ?? undefined,
     title: 'Sign in to Google',
     backgroundColor: '#ffffff',
     minWidth: 400,
     minHeight: 480,
-    autoHideMenuBar: true
-  })
-
-  // The trusted local address bar. No preload / node access needed: main pushes
-  // updates into it via executeJavaScript; it has no privileged work to do.
-  const chromeView = new WebContentsView()
-  // The real Google page: a top-level surface, honest UA, the app's own session,
-  // and deliberately hands-off — no preload, so nothing can touch the page.
-  const googleView = new WebContentsView({
+    autoHideMenuBar: true,
     webPreferences: {
+      // Share the app's own session so the login cookie lands in its partition.
       session: opts.session,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
     }
   })
-  win.contentView.addChildView(chromeView)
-  win.contentView.addChildView(googleView)
-
-  const layout = (): void => {
-    if (win.isDestroyed()) return
-    const { width, height } = win.getContentBounds()
-    chromeView.setBounds({ x: 0, y: 0, width, height: CHROME_HEIGHT })
-    googleView.setBounds({ x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) })
-  }
-  layout()
-  win.on('resize', layout)
-
-  // Push address-bar updates only once the local bar page is ready; keep the
-  // latest state so an early navigation isn't lost.
-  let chromeReady = false
-  let lastBar = { url: opts.startUrl, secure: opts.startUrl.startsWith('https:') }
-  const pushBar = (): void => {
-    if (!chromeReady || chromeView.webContents.isDestroyed()) return
-    void chromeView.webContents.executeJavaScript(`window.__setBar(${JSON.stringify(lastBar)})`)
-  }
-  chromeView.webContents.on('did-finish-load', () => {
-    chromeReady = true
-    pushBar()
-  })
-  void chromeView.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(chromeHtml()))
+  const wc = win.webContents
 
   // Honest identity, set before the first navigation so header and
   // navigator.userAgent agree from the very first request.
-  googleView.webContents.setUserAgent(opts.userAgent)
+  wc.setUserAgent(opts.userAgent)
 
   // Keep the whole sign-in flow inside this one window (so it always uses this
   // window's honest identity) rather than spawning further popups.
-  googleView.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void googleView.webContents.loadURL(url)
+  wc.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void wc.loadURL(url)
     return { action: 'deny' }
   })
 
@@ -177,14 +107,13 @@ export function openHonestLoginWindow(opts: LoginWindowOptions): BrowserWindow {
 
   // Completion signal #2: Google forwards us off the sign-in host to the app
   // (e.g. mail.google.com) — that only happens once signed in. Also keep the
-  // address bar current. URL only; the page itself is never read.
+  // title bar's address current. URL only; the page itself is never read.
   const onNavigate = (_e: unknown, url: string): void => {
-    lastBar = { url, secure: url.startsWith('https:') }
-    pushBar()
+    if (!win.isDestroyed()) win.setTitle('🔒 ' + hostPath(url) + '  —  Secure Google sign-in')
     if (isPostLoginUrl(url)) finish(true)
   }
-  googleView.webContents.on('did-navigate', onNavigate)
-  googleView.webContents.on('did-navigate-in-page', onNavigate)
+  wc.on('did-navigate', onNavigate)
+  wc.on('did-navigate-in-page', onNavigate)
 
   // Closing the window (including a user cancelling) tears down the listener.
   win.on('closed', () => {
@@ -198,7 +127,7 @@ export function openHonestLoginWindow(opts: LoginWindowOptions): BrowserWindow {
     }
   })
 
-  void googleView.webContents.loadURL(opts.startUrl)
+  void wc.loadURL(opts.startUrl)
   return win
 }
 

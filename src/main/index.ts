@@ -13,8 +13,9 @@ import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
-import { FIREFOX_UA, isGoogleUrl } from '../shared/types'
+import { FIREFOX_UA, isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
+import { openHonestLoginWindow } from './loginWindow'
 
 const APP_STATE_FILE = 'app-state.json'
 const CLIENT_STATE_FILE = 'client-state.json'
@@ -57,9 +58,12 @@ if (clientContextId) {
 // normally, Firefox for Google apps); popups inherit it at birth — which is
 // the only point a popup's navigator.userAgent can be set (see the
 // window-open handler, where it is briefly swapped to Firefox for Google).
-const CHROME_UA = app.userAgentFallback
-  .replace(/\sElectron\/\S+/i, '')
-  .replace(/\scontextworkspace\/\S+/i, '')
+const RAW_UA = app.userAgentFallback
+const CHROME_UA = RAW_UA.replace(/\sElectron\/\S+/i, '').replace(/\scontextworkspace\/\S+/i, '')
+// Honest sign-in UA: strip ONLY the Electron token, KEEPING the app token. This
+// matches the standalone tester that Google accepted (login-test/FINDINGS.md) —
+// the fully-cleaned CHROME_UA (a "pure Chrome" claim) is what Google rejects.
+const LOGIN_HONEST_UA = RAW_UA.replace(/\sElectron\/\S+/i, '')
 app.userAgentFallback = CHROME_UA
 
 /** The state file every process reads contexts/apps from (main app's copy). */
@@ -201,6 +205,52 @@ app.on('web-contents-created', (_event, contents) => {
     } else if (input.key === ',') {
       event.preventDefault()
       win.webContents.send('settings:toggle')
+    }
+  })
+
+  // Honest Google sign-in (EXPERIMENT — matches the standalone tester that
+  // Google accepted). When a Google web-app's webview is about to load a Google
+  // *sign-in* page, cancel that navigation and complete sign-in in a real
+  // top-level window with our honest identity (LOGIN_HONEST_UA), sharing this
+  // webview's own session; on success, send the app to Google's post-login
+  // destination, now authenticated. For this experiment the Firefox disguise is
+  // switched off (the Google webview uses the honest UA — see Workspace.tsx).
+  let honestLoginOpen = false
+  const startHonestLogin = (signInUrl: string): void => {
+    if (honestLoginOpen) return
+    honestLoginOpen = true
+    let dest: string | null = null
+    try {
+      dest = new URL(signInUrl).searchParams.get('continue')
+    } catch {
+      dest = null
+    }
+    const loginWin = openHonestLoginWindow({
+      parent: mainWindow,
+      session: contents.session,
+      userAgent: LOGIN_HONEST_UA,
+      startUrl: signInUrl,
+      onSuccess: () => {
+        if (contents.isDestroyed()) return
+        if (dest) void contents.loadURL(dest)
+        else contents.reload()
+      }
+    })
+    loginWin.on('closed', () => {
+      honestLoginOpen = false
+    })
+  }
+  const cancelSignInNav = (event: Electron.Event, url: string): void => {
+    if (!isGoogleSignInUrl(url)) return
+    event.preventDefault()
+    startHonestLogin(url)
+  }
+  contents.on('will-redirect', cancelSignInNav)
+  contents.on('will-navigate', cancelSignInNav)
+  contents.on('did-navigate', (_event, url) => {
+    if (!honestLoginOpen && isGoogleSignInUrl(url)) {
+      startHonestLogin(url)
+      if (!contents.isDestroyed()) void contents.loadURL('about:blank')
     }
   })
 
