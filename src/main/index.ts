@@ -205,32 +205,60 @@ app.on('web-contents-created', (_event, contents) => {
     }
   })
 
-  // Honest Google sign-in. When a Google web-app's webview heads to a Google
-  // *sign-in* page, don't let it attempt the login behind the Firefox disguise
-  // (which testing showed fails outright for Workspace/business accounts —
-  // see login-test/FINDINGS.md). Instead complete sign-in in a real top-level
-  // window presenting our honest Chrome identity, sharing this webview's own
-  // session, then reload the app — now authenticated. The Firefox UA stays in
-  // place for the running app and for third-party OAuth popups as a fallback.
+  // Honest Google sign-in. When a Google web-app's webview is about to load a
+  // Google *sign-in* page, don't let it attempt that login behind the Firefox
+  // disguise (which testing showed fails outright for Workspace/business
+  // accounts — see login-test/FINDINGS.md). Cancel the webview's own trip to the
+  // sign-in page so only one, genuine sign-in surface is ever shown, and complete
+  // the login in a real top-level window presenting our honest Chrome identity,
+  // sharing this webview's own session. On success, send the app to Google's
+  // post-login destination, now authenticated. The Firefox UA stays in place for
+  // the running app and third-party OAuth popups as a fallback.
   let honestLoginOpen = false
-  const maybeHonestLogin = (url: string): void => {
-    if (honestLoginOpen || !isGoogleSignInUrl(url)) return
+  const startHonestLogin = (signInUrl: string): void => {
+    if (honestLoginOpen) return
     honestLoginOpen = true
+    // Where Google forwards once signed in (the sign-in URL's `continue=` target).
+    let dest: string | null = null
+    try {
+      dest = new URL(signInUrl).searchParams.get('continue')
+    } catch {
+      dest = null
+    }
     const loginWin = openHonestLoginWindow({
       parent: mainWindow,
       session: contents.session,
       userAgent: CHROME_UA,
-      startUrl: url,
+      startUrl: signInUrl,
       onSuccess: () => {
-        if (!contents.isDestroyed()) contents.reload()
+        if (contents.isDestroyed()) return
+        if (dest) void contents.loadURL(dest)
+        else contents.reload()
       }
     })
     loginWin.on('closed', () => {
       honestLoginOpen = false
     })
   }
-  contents.on('did-redirect-navigation', (_event, url) => maybeHonestLogin(url))
-  contents.on('did-navigate', (_event, url) => maybeHonestLogin(url))
+  // Cancel the webview's navigation to a sign-in page and hand it to the honest
+  // window instead. will-redirect covers the usual case (the app 302-redirects
+  // to accounts.google.com); will-navigate covers a client-side hop.
+  const cancelSignInNav = (event: Electron.Event, url: string): void => {
+    if (!isGoogleSignInUrl(url)) return
+    event.preventDefault()
+    startHonestLogin(url)
+  }
+  contents.on('will-redirect', cancelSignInNav)
+  contents.on('will-navigate', cancelSignInNav)
+  // Backstop: if a sign-in page committed anyway (e.g. it was the app's own URL,
+  // so there was no navigation to cancel), hide that failing embedded attempt
+  // behind the honest window instead of leaving it on screen.
+  contents.on('did-navigate', (_event, url) => {
+    if (!honestLoginOpen && isGoogleSignInUrl(url)) {
+      startHonestLogin(url)
+      if (!contents.isDestroyed()) void contents.loadURL('about:blank')
+    }
+  })
 
   // Popups (OAuth sign-in flows etc.) are allowed and automatically inherit
   // the opener webview's isolated session partition. Anything non-http(s) is
