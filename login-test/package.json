@@ -1,0 +1,12 @@
+{
+  "name": "rumex-login-test",
+  "version": "1.0.0",
+  "description": "Two-way Google login test: honest ID vs Firefox disguise",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^43.1.0"
+  }
+}
