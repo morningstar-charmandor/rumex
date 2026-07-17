@@ -216,8 +216,18 @@ app.on('web-contents-created', (_event, contents) => {
   // destination, now authenticated. For this experiment the Firefox disguise is
   // switched off (the Google webview uses the honest UA — see Workspace.tsx).
   let honestLoginOpen = false
+  // After a login window closes, briefly ignore further sign-in navigations so a
+  // page that bounces back to sign-in can't reopen the window in a flicker loop.
+  let suppressUntil = 0
+  // The app's real URL, so we can return the panel there after login instead of
+  // stranding it on a blank page. Captured from the first/main navigation that
+  // isn't itself a sign-in URL (a redirect to sign-in never overwrites it).
+  let appUrl = ''
+  contents.on('did-start-navigation', (_e, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame && /^https?:\/\//i.test(url) && !isGoogleSignInUrl(url)) appUrl = url
+  })
   const startHonestLogin = (signInUrl: string): void => {
-    if (honestLoginOpen) return
+    if (honestLoginOpen || Date.now() < suppressUntil) return
     honestLoginOpen = true
     let dest: string | null = null
     try {
@@ -232,25 +242,26 @@ app.on('web-contents-created', (_event, contents) => {
       startUrl: signInUrl,
       onSuccess: () => {
         if (contents.isDestroyed()) return
-        if (dest) void contents.loadURL(dest)
+        const back = appUrl || dest
+        if (back) void contents.loadURL(back)
         else contents.reload()
       }
     })
     loginWin.on('closed', () => {
       honestLoginOpen = false
+      suppressUntil = Date.now() + 12000
     })
   }
   const cancelSignInNav = (event: Electron.Event, url: string): void => {
-    if (!isGoogleSignInUrl(url)) return
+    if (!isGoogleSignInUrl(url) || honestLoginOpen || Date.now() < suppressUntil) return
     event.preventDefault()
     startHonestLogin(url)
   }
   contents.on('will-redirect', cancelSignInNav)
   contents.on('will-navigate', cancelSignInNav)
   contents.on('did-navigate', (_event, url) => {
-    if (!honestLoginOpen && isGoogleSignInUrl(url)) {
+    if (!honestLoginOpen && Date.now() >= suppressUntil && isGoogleSignInUrl(url)) {
       startHonestLogin(url)
-      if (!contents.isDestroyed()) void contents.loadURL('about:blank')
     }
   })
 
