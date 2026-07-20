@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import type { Theme } from '../../../shared/types'
+import type { NotchCompatibility, Theme, WorkContext } from '../../../shared/types'
 
 type Section = 'general' | 'memory' | 'downloads' | 'network' | 'account' | 'updates' | 'about'
 
@@ -11,6 +11,10 @@ interface SettingsProps {
   onSetSleepAfter(minutes: number): void
   openAtLogin: boolean
   onSetOpenAtLogin(open: boolean): void
+  notchSwitcher: boolean
+  onSetNotchSwitcher(open: boolean): void
+  notchCompatibility: NotchCompatibility
+  contexts: WorkContext[]
   appVersion: string
   onCheckUpdate(): void
   onOpenExternal(url: string): void
@@ -61,13 +65,14 @@ function Row(props: { label: string; description: string; children: ReactNode; l
   )
 }
 
-function Toggle(props: { on: boolean; onChange(on: boolean): void }): JSX.Element {
+function Toggle(props: { on: boolean; onChange(on: boolean): void; disabled?: boolean }): JSX.Element {
   return (
     <button
       role="switch"
       aria-checked={props.on}
+      disabled={props.disabled}
       onClick={() => props.onChange(!props.on)}
-      className={`relative h-[22px] w-[38px] rounded-full transition-colors ${
+      className={`relative h-[22px] w-[38px] rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         props.on ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-[#3a3833]'
       }`}
     >
@@ -84,6 +89,37 @@ function SectionHeader(props: { children: ReactNode }): JSX.Element {
   return (
     <div className="mb-4 text-[15px] font-medium text-zinc-900 dark:text-[#f2f1ee]">
       {props.children}
+    </div>
+  )
+}
+
+function NotchPreview({ contexts }: { contexts: WorkContext[] }): JSX.Element {
+  const shown = contexts.slice(0, 5)
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200 bg-gradient-to-br from-rose-200 via-violet-200 to-indigo-300 dark:border-[#302e2a] dark:from-rose-950 dark:via-violet-950 dark:to-indigo-950">
+      <div className="relative h-[74px] bg-white/55 dark:bg-white/10">
+        <div className="absolute left-1/2 top-0 h-8 w-36 -translate-x-1/2 rounded-b-xl bg-black" />
+        <div className="absolute right-[calc(50%+76px)] top-0 flex h-8 items-center gap-1 rounded-b-lg bg-black px-1.5">
+          {shown.map((context) => (
+            <div
+              key={context.id}
+              className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-[7px] text-[14px] font-semibold text-white"
+              style={{ backgroundColor: context.iconImage || context.icon ? 'rgba(255,255,255,.12)' : context.color }}
+            >
+              {context.iconImage ? (
+                <img src={context.iconImage} alt="" className="h-full w-full object-cover" />
+              ) : context.icon ? (
+                context.icon
+              ) : (
+                context.name.charAt(0).toUpperCase()
+              )}
+            </div>
+          ))}
+        </div>
+        <span className="absolute bottom-2 left-3 text-[10px] font-medium text-black/45 dark:text-white/40">
+          Preview on your built-in display
+        </span>
+      </div>
     </div>
   )
 }
@@ -196,10 +232,25 @@ export default function Settings(props: SettingsProps): JSX.Element {
               <Row
                 label="Start at login"
                 description="Open automatically when you sign in to your Mac"
-                last
               >
                 <Toggle on={props.openAtLogin} onChange={props.onSetOpenAtLogin} />
               </Row>
+              <Row
+                label="Notch context switcher"
+                description={
+                  props.notchCompatibility.supported
+                    ? 'Show context shortcuts beside your MacBook notch'
+                    : 'Available on MacBooks with a detected display notch'
+                }
+                last
+              >
+                <Toggle
+                  on={props.notchSwitcher}
+                  onChange={props.onSetNotchSwitcher}
+                  disabled={!props.notchCompatibility.supported}
+                />
+              </Row>
+              <NotchPreview contexts={props.contexts} />
             </>
           )}
 

@@ -9,12 +9,14 @@ import {
   webContents
 } from 'electron'
 import type { Rectangle } from 'electron'
-import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, watchFile, writeFileSync } from 'fs'
+import { spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
 import { FIREFOX_UA, isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
-import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
+import type { ActiveApp, AppState, DockAppRequest, NotchCompatibility } from '../shared/types'
 import { openHonestLoginWindow } from './loginWindow'
 
 const APP_STATE_FILE = 'app-state.json'
@@ -121,6 +123,96 @@ interface WindowState {
 }
 
 let mainWindow: BrowserWindow | null = null
+let notchHelper: ChildProcess | null = null
+let isQuitting = false
+
+/**
+ * Electron does not expose NSScreen.safeAreaInsets. A tall built-in menu bar is
+ * nevertheless a reliable no-native-module signal on current notched MacBooks:
+ * normal Macs reserve roughly 24px, while notched panels reserve ~32–38px.
+ */
+function notchCompatibility(): NotchCompatibility {
+  if (process.platform !== 'darwin') return { supported: false, reason: 'not-macos' }
+  const builtIn = screen
+    .getAllDisplays()
+    .find((display) => display.internal || /built-?in/i.test(display.label))
+  if (!builtIn) return { supported: false, reason: 'no-built-in-display' }
+  const topInset = builtIn.workArea.y - builtIn.bounds.y
+  if (topInset < 30) return { supported: false, reason: 'no-notch-detected' }
+  return { supported: true, reason: 'supported' }
+}
+
+function notchCommandPath(): string {
+  return join(app.getPath('userData'), 'notch-command.json')
+}
+
+function closeNotchHelper(): void {
+  if (notchHelper && !notchHelper.killed) notchHelper.kill()
+  notchHelper = null
+}
+
+function syncNotchHelper(state: AppState | null): void {
+  if (isQuitting) return
+  const enabled = !clientContextId && state?.settings?.notchSwitcher === true
+  if (!enabled || !notchCompatibility().supported || !state) {
+    closeNotchHelper()
+    return
+  }
+  if (notchHelper && !notchHelper.killed) return
+  const binary = app.isPackaged
+    ? join(process.resourcesPath, 'native', 'RumexNotchHelper')
+    : join(app.getAppPath(), 'native', 'bin', 'RumexNotchHelper')
+  if (!existsSync(binary)) {
+    console.warn('Native notch helper is missing; run npm run build:notch-helper')
+    return
+  }
+  const child = spawn(binary, [sharedStatePath(), notchCommandPath()], {
+    stdio: 'ignore',
+    detached: false
+  })
+  notchHelper = child
+  child.once('exit', () => {
+    if (notchHelper === child) {
+      notchHelper = null
+      setTimeout(() => syncNotchHelper(loadState()), 500)
+    }
+  })
+}
+
+function activateContextFromShortcut(contextId: string): void {
+  const state = loadState()
+  if (!state?.contexts.some((context) => context.id === contextId)) return
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  const win = mainWindow
+  if (!win) return
+  const deliver = (): void => {
+    if (win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    win.webContents.send('context:activate', contextId)
+  }
+  if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', deliver)
+  else deliver()
+}
+
+function activateAppFromShortcut(contextId: string, appId: string): void {
+  const state = loadState()
+  const context = state?.contexts.find((candidate) => candidate.id === contextId)
+  if (!context?.apps.some((candidate) => candidate.id === appId)) return
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  const win = mainWindow
+  if (!win) return
+  const deliver = (): void => {
+    if (win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    win.webContents.send('app:activate', contextId, appId)
+  }
+  if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', deliver)
+  else deliver()
+}
 
 function intersects(a: Rectangle, b: Rectangle): boolean {
   return (
@@ -469,6 +561,14 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(() => {
     ensureClientPartitions()
 
+    ipcMain.on('notch:compatibility', (event) => {
+      event.returnValue = notchCompatibility()
+    })
+
+    ipcMain.on('context:activate', (_event, contextId: string) => {
+      if (typeof contextId === 'string') activateContextFromShortcut(contextId)
+    })
+
     ipcMain.handle('state:load', (): AppState | null => loadState())
 
     ipcMain.handle('state:save', (_event, state: AppState): void => {
@@ -486,6 +586,7 @@ if (!gotSingleInstanceLock) {
         }
       } else {
         writeJson(APP_STATE_FILE, state)
+        syncNotchHelper(state)
       }
     })
 
@@ -581,6 +682,26 @@ if (!gotSingleInstanceLock) {
     })
 
     createWindow()
+    const commandPath = notchCommandPath()
+    if (!existsSync(commandPath)) writeFileSync(commandPath, '{}')
+    let lastNotchCommand = ''
+    watchFile(commandPath, { interval: 200 }, () => {
+      try {
+        const raw = readFileSync(commandPath, 'utf8')
+        if (raw === lastNotchCommand) return
+        lastNotchCommand = raw
+        const command = JSON.parse(raw) as { kind?: unknown; contextId?: unknown; appId?: unknown }
+        if (typeof command.contextId !== 'string') return
+        if (command.kind === 'app' && typeof command.appId === 'string') {
+          activateAppFromShortcut(command.contextId, command.appId)
+        } else {
+          activateContextFromShortcut(command.contextId)
+        }
+      } catch {
+        // The helper writes atomically; ignore an incomplete/missing poll.
+      }
+    })
+    syncNotchHelper(loadState())
 
     // Other processes (main app ↔ client apps) write the shared state file
     // too; poll it and let the renderer refresh. The renderer ignores events
@@ -588,10 +709,11 @@ if (!gotSingleInstanceLock) {
     watchFile(sharedStatePath(), { interval: 1500 }, () => {
       const win = mainWindow
       if (win && !win.isDestroyed()) win.webContents.send('state:external-change')
+      syncNotchHelper(loadState())
     })
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow()
     })
   })
 }
@@ -599,4 +721,9 @@ if (!gotSingleInstanceLock) {
 app.on('window-all-closed', () => {
   // A client Dock app behaves like a document app: closing its window quits it.
   if (clientContextId || process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
+  closeNotchHelper()
 })

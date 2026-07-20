@@ -6,6 +6,9 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: native/bin/RumexNotchHelper
+    to: native/RumexNotchHelper
 asar: true
 npmRebuild: false
 mac:

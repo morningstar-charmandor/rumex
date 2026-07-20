@@ -37,6 +37,13 @@ export interface Settings {
   sleepAfterMinutes?: number
   /** Launch Rumex automatically at macOS login. */
   openAtLogin?: boolean
+  /** Show compact context shortcuts beside the notch on compatible MacBooks. */
+  notchSwitcher?: boolean
+}
+
+export interface NotchCompatibility {
+  supported: boolean
+  reason: 'supported' | 'not-macos' | 'no-built-in-display' | 'no-notch-detected'
 }
 
 export interface AppState {
@@ -95,6 +102,12 @@ export interface Api {
   checkForUpdate(): void
   /** Fires when ⌘, is pressed (open Settings). */
   onSettingsToggle(callback: () => void): () => void
+  /** Ask the main Rumex window to enter a context selected from the notch surface. */
+  activateContext(contextId: string): void
+  /** Fires in the main renderer when an external shortcut selects a context. */
+  onContextActivate(callback: (contextId: string) => void): () => void
+  /** Fires in the main renderer when an external shortcut selects an app. */
+  onAppActivate(callback: (contextId: string, appId: string) => void): () => void
   /** This build's version string, e.g. "0.1.0". */
   appVersion: string
   /** Set when this process is a per-context Dock app; the UI shows only that context. */
@@ -102,6 +115,7 @@ export interface Api {
   /** Dev/test hook: auto-create a Dock app for the first context on launch. */
   testDockApp: boolean
   platform: string
+  notchCompatibility: NotchCompatibility
   userAgent: string
 }
 
