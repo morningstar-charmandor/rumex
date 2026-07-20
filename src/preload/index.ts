@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Api, AppState, UpdateInfo } from '../shared/types'
+import type { Api, AppState, NotchCompatibility, UpdateInfo } from '../shared/types'
 
 // Some identity providers (e.g. Google) block sign-in from user agents that
 // advertise an embedded browser, so the Electron token is stripped before the
@@ -43,10 +43,23 @@ const api: Api = {
     ipcRenderer.on('settings:toggle', listener)
     return () => ipcRenderer.removeListener('settings:toggle', listener)
   },
+  activateContext: (contextId) => ipcRenderer.send('context:activate', contextId),
+  onContextActivate: (callback) => {
+    const listener = (_e: unknown, contextId: string): void => callback(contextId)
+    ipcRenderer.on('context:activate', listener)
+    return () => ipcRenderer.removeListener('context:activate', listener)
+  },
+  onAppActivate: (callback) => {
+    const listener = (_e: unknown, contextId: string, appId: string): void =>
+      callback(contextId, appId)
+    ipcRenderer.on('app:activate', listener)
+    return () => ipcRenderer.removeListener('app:activate', listener)
+  },
   appVersion: ipcRenderer.sendSync('get-app-version') as string,
   clientContextId: process.env['CW_CONTEXT_ID'] ?? null,
   testDockApp: process.env['CW_TEST_DOCKAPP'] === '1',
   platform: process.platform,
+  notchCompatibility: ipcRenderer.sendSync('notch:compatibility') as NotchCompatibility,
   userAgent
 }
 

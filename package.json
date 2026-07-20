@@ -7,15 +7,18 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "npm run build:notch-helper && electron-vite dev",
+    "build:notch-helper": "sh scripts/build-notch-helper.sh",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder",
-    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:mac": "npm run build:notch-helper && electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
+    "@dicebear/core": "10.2.0",
+    "@dicebear/styles": "10.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

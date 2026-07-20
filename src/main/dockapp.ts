@@ -27,7 +27,7 @@ export function createDockApp(request: DockAppRequest): DockAppResult {
   }
   try {
     const appsDir = join(app.getPath('home'), 'Applications', 'Rumex Apps')
-    const safeName = request.contextName.replace(/[/:]+/g, '-').trim() || 'Context'
+    const safeName = request.contextName.replace(/[/:]+/g, '-').trim() || 'Space'
     const bundle = join(appsDir, `${safeName}.app`)
     // Assemble in a temp bundle, then swap it into place. Cloning straight
     // onto an existing (possibly running) bundle can merge into it and leave a

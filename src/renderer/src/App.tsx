@@ -196,6 +196,8 @@ export default function App(): JSX.Element {
     )
   }, [])
 
+  useEffect(() => window.api.onAppActivate(selectApp), [selectApp])
+
   // ⌘K toggles the command palette — from our own UI (keydown) and from inside
   // a focused web app (forwarded by the main process).
   useEffect(() => {
@@ -264,6 +266,10 @@ export default function App(): JSX.Element {
   const setOpenAtLogin = useCallback((open: boolean) => {
     window.api.setLoginItem(open)
     setState((s) => (s ? { ...s, settings: { ...s.settings, openAtLogin: open } } : s))
+  }, [])
+
+  const setNotchSwitcher = useCallback((open: boolean) => {
+    setState((s) => (s ? { ...s, settings: { ...s.settings, notchSwitcher: open } } : s))
   }, [])
 
   // Keep the OS login item in sync with the persisted setting on launch.
@@ -549,6 +555,10 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  // Native surfaces (the optional notch bar and, later, the Dock menu) enter
+  // contexts through the same deterministic Context Brief path as the sidebar.
+  useEffect(() => window.api.onContextActivate(enterContext), [enterContext])
+
   const deleteApp = useCallback((contextId: string, appId: string) => {
     if (!window.confirm('Remove this app? Its isolated session data will be wiped.')) return
     void window.api.clearPartition(partitionFor(contextId, appId))
@@ -573,7 +583,7 @@ export default function App(): JSX.Element {
   }, [])
 
   const deleteContext = useCallback((contextId: string) => {
-    if (!window.confirm('Delete this context and all its apps? All session data will be wiped.'))
+    if (!window.confirm('Delete this space and all its apps? All session data will be wiped.'))
       return
     setState((s) => {
       if (!s) return s
@@ -722,6 +732,10 @@ export default function App(): JSX.Element {
           onSetSleepAfter={setSleepAfter}
           openAtLogin={state.settings?.openAtLogin ?? false}
           onSetOpenAtLogin={setOpenAtLogin}
+          notchSwitcher={state.settings?.notchSwitcher ?? false}
+          onSetNotchSwitcher={setNotchSwitcher}
+          notchCompatibility={window.api.notchCompatibility}
+          contexts={state.contexts}
           appVersion={window.api.appVersion}
           onCheckUpdate={() => window.api.checkForUpdate()}
           onOpenExternal={(url) => window.api.openExternal(url)}

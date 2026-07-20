@@ -34,7 +34,7 @@ Keyboard shortcuts (since there is no browser chrome):
 
 Apps show their **real favicon** (the icon they use in a normal browser), resolved in the main process from the app's URL (page `<link rel=icon>` → `/favicon.ico` → favicon service) and cached as a data URI, so the strict renderer CSP still blocks remote images.
 
-Click a context's leading icon to open the **icon picker**: set a custom emoji, or pick any favicon from the apps inside that context, or reset to the color dot. The chosen icon shows in the sidebar and is reused as the context's Dock-app icon (emoji rendered, or the favicon drawn onto the tile).
+Click a context's leading icon to open the **icon picker**: set a custom emoji, choose a locally generated DiceBear avatar, pick any favicon from the apps inside that context, or reset to the color dot. The chosen icon shows in the sidebar and is reused as the context's Dock-app icon.
 
 ## Per-context Dock apps (macOS)
 
