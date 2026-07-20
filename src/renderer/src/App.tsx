@@ -583,7 +583,7 @@ export default function App(): JSX.Element {
   }, [])
 
   const deleteContext = useCallback((contextId: string) => {
-    if (!window.confirm('Delete this context and all its apps? All session data will be wiped.'))
+    if (!window.confirm('Delete this space and all its apps? All session data will be wiped.'))
       return
     setState((s) => {
       if (!s) return s

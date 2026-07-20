@@ -6,6 +6,7 @@ directories:
 files:
   - out/**
   - package.json
+  - THIRD_PARTY_NOTICES.md
 extraResources:
   - from: native/bin/RumexNotchHelper
     to: native/RumexNotchHelper
@@ -13,7 +14,7 @@ asar: true
 npmRebuild: false
 mac:
   category: public.app-category.productivity
-  icon: build/icon.icns
+  icon: build/icon.png
   target:
     - dmg
     - zip

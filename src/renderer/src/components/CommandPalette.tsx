@@ -105,7 +105,7 @@ export default function CommandPalette(props: {
         <input
           autoFocus
           value={query}
-          placeholder="Go to a context or app…"
+          placeholder="Go to a space or app…"
           onChange={(e) => setQuery(e.target.value)}
           className="w-full border-b border-zinc-200 bg-transparent px-4 py-3 text-[15px] text-zinc-900 placeholder-zinc-400 outline-none dark:border-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
         />
@@ -161,7 +161,7 @@ export default function CommandPalette(props: {
                   </span>
                 ) : null}
                 <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
-                  {e.kind === 'context' ? 'Context' : e.sub}
+                  {e.kind === 'context' ? 'Space' : e.sub}
                 </span>
               </button>
             )

@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
 import type { ActiveApp, MemoryUsage, WebApp, WorkContext } from '../../../shared/types'
+import {
+  THUMB_AVATAR_SEEDS,
+  thumbAvatarDataUri,
+  thumbAvatarPngDataUri
+} from '../avatarIcon'
 import { buildSuggestions } from '../catalog'
 import { appKey, type NavAction } from '../App'
 
@@ -193,10 +198,15 @@ function ContextIconPicker(props: {
   onClose(): void
 }): JSX.Element {
   const [emoji, setEmoji] = useState('')
+  const [avatarLoading, setAvatarLoading] = useState<string | null>(null)
   const appIcons = props.context.apps.filter((a) => a.favicon)
+  const avatars = useMemo(
+    () => THUMB_AVATAR_SEEDS.map((seed) => ({ seed, image: thumbAvatarDataUri(seed) })),
+    []
+  )
   return (
     <div
-      className="absolute left-2 top-9 z-30 w-56 rounded-lg border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+      className="absolute left-2 top-9 z-30 w-64 rounded-lg border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
       onKeyDown={(e) => e.key === 'Escape' && props.onClose()}
     >
       <p className="px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
@@ -215,6 +225,35 @@ function ContextIconPicker(props: {
         }}
         className="w-full rounded bg-zinc-200 px-2 py-1 text-[13px] text-zinc-900 placeholder-zinc-500 outline-none ring-1 ring-zinc-300 focus:ring-zinc-400 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:ring-zinc-500"
       />
+      <p className="px-1 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        Avatars
+      </p>
+      <div className="grid grid-cols-6 gap-1 px-1">
+        {avatars.map(({ seed, image }, index) => (
+          <button
+            key={seed}
+            title={`Avatar ${index + 1}`}
+            disabled={avatarLoading !== null}
+            onClick={async () => {
+              setAvatarLoading(seed)
+              try {
+                props.onSet({ image: await thumbAvatarPngDataUri(seed) })
+                props.onClose()
+              } finally {
+                setAvatarLoading(null)
+              }
+            }}
+            className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-md ring-1 ring-zinc-300 hover:ring-zinc-500 disabled:opacity-60 dark:ring-zinc-700 dark:hover:ring-zinc-400"
+          >
+            <img src={image} alt="" className="h-full w-full" />
+            {avatarLoading === seed && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-[10px] text-white">
+                …
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
       <p className="px-1 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
         Use an app icon
       </p>
@@ -291,7 +330,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
       {!clientMode && (
         <button
           onClick={props.onOpenPalette}
-          title="Search contexts and apps (⌘K)"
+          title="Search spaces and apps (⌘K)"
           className="no-drag mx-2 mb-1 flex items-center gap-2 rounded-md bg-zinc-100 px-2 py-1.5 text-left text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:ring-zinc-800 dark:hover:bg-zinc-800/70"
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round">
@@ -342,7 +381,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
               <div className="group relative flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900">
                 {isRenamingContext(context.id) ? (
                   <InlineInput
-                    placeholder="Context name"
+                    placeholder="Space name"
                     initial={context.name}
                     onSubmit={(name) => {
                       props.onRenameContext(context.id, name)
@@ -408,7 +447,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                         {isMac && (
                           <button
                             onClick={() => props.onCreateDockApp(context.id)}
-                            title="Add to Dock as its own app (uses this context's icon)"
+                            title="Add to Dock as its own app (uses this space's icon)"
                             className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                           >
                             <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -419,7 +458,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
                         )}
                         <button
                           onClick={() => props.onDeleteContext(context.id)}
-                          title="Delete context"
+                          title="Delete space"
                           className="hidden h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-red-500 group-hover:flex dark:hover:bg-zinc-800 dark:hover:text-red-400"
                         >
                           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
@@ -645,7 +684,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
         {!clientMode &&
           (addingContext ? (
             <InlineInput
-              placeholder="Context name (e.g. Client A)"
+              placeholder="Space name (e.g. Client A)"
               onSubmit={(name) => {
                 props.onAddContext(name)
                 setAddingContext(false)
@@ -657,7 +696,7 @@ export default function Sidebar(props: SidebarProps): JSX.Element {
               onClick={() => setAddingContext(true)}
               className="flex-1 rounded-md px-2 py-1.5 text-left text-[13px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-300"
             >
-              + New Context
+              + New Space
             </button>
           ))}
         {!clientMode && !addingContext && (

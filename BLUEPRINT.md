@@ -123,7 +123,7 @@ Theme = 'light'|'dark'|'system'
 
 ### 5.5 Rename & icons
 - Double-click a context/app name to rename inline; a manual rename disables auto-naming.
-- **Context icon picker** (click the context’s leading icon): custom emoji (clamped to 1 grapheme via `Intl.Segmenter`), or pick any favicon from the context’s apps, or reset. Emoji and image are mutually exclusive. The chosen icon shows in the sidebar and is reused as the Dock-app icon.
+- **Context icon picker** (click the context’s leading icon): custom emoji (clamped to 1 grapheme via `Intl.Segmenter`), a locally generated DiceBear `thumbs` avatar, any favicon from the context’s apps, or reset. Emoji and image are mutually exclusive. DiceBear runs locally from pinned packages (never the public API); selected SVG avatars are rasterized to 512px PNG data URIs for compatibility with the sidebar, native notch helper, and Dock-app `.icns` generation. The `thumbs` artwork is CC0 1.0 and the DiceBear core is MIT; notices ship in `THIRD_PARTY_NOTICES.md`.
 
 ### 5.6 Favicons ⚠️
 - Resolved in **main** (not renderer — CSP blocks remote images) from the app’s URL: fetch the page HTML, parse `<link rel="…icon…">` (prefer apple-touch-icon / larger `sizes`), else `/favicon.ico`, else `https://www.google.com/s2/favicons?domain=<host>`. Return a data URI (≤512KB, `content-type` must be `image/*`). Store on `WebApp.favicon`.

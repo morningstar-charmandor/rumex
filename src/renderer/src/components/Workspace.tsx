@@ -53,7 +53,7 @@ function ContextBrief(props: {
       </p>
 
       {context.apps.length === 0 ? (
-        <p className="text-[13px] text-zinc-500">No apps in this context yet.</p>
+        <p className="text-[13px] text-zinc-500">No apps in this space yet.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {context.apps.map((a) => (

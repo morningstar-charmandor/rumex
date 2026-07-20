@@ -236,10 +236,10 @@ export default function Settings(props: SettingsProps): JSX.Element {
                 <Toggle on={props.openAtLogin} onChange={props.onSetOpenAtLogin} />
               </Row>
               <Row
-                label="Notch context switcher"
+                label="Notch space switcher"
                 description={
                   props.notchCompatibility.supported
-                    ? 'Show context shortcuts beside your MacBook notch'
+                    ? 'Show space shortcuts beside your MacBook notch'
                     : 'Available on MacBooks with a detected display notch'
                 }
                 last
@@ -283,8 +283,8 @@ export default function Settings(props: SettingsProps): JSX.Element {
             <>
               <SectionHeader>Downloads</SectionHeader>
               <Placeholder
-                title="Per-context downloads folder"
-                blurb="Files downloaded in each context will land in their own folder, so a client's assets never mix with another's."
+                title="Per-space downloads folder"
+                blurb="Files downloaded in each space will land in their own folder, so a client's assets never mix with another's."
                 ticket="22"
               />
             </>
@@ -294,8 +294,8 @@ export default function Settings(props: SettingsProps): JSX.Element {
             <>
               <SectionHeader>Network</SectionHeader>
               <Placeholder
-                title="Per-context proxy"
-                blurb="Route each context's web traffic through its own proxy, so entering a context brings the right network identity. Not a full system VPN."
+                title="Per-space proxy"
+                blurb="Route each space's web traffic through its own proxy, so entering a space brings the right network identity. Not a full system VPN."
                 ticket="23"
               />
             </>
@@ -305,12 +305,12 @@ export default function Settings(props: SettingsProps): JSX.Element {
             <>
               <SectionHeader>Account</SectionHeader>
               <p className="mb-4 max-w-sm text-[12px] leading-5 text-zinc-500 dark:text-[#8a887f]">
-                Sign in to sync your contexts, back them up, and restore them on another Mac. The app
+                Sign in to sync your spaces, back them up, and restore them on another Mac. The app
                 stays fully usable without an account.
               </p>
               <Placeholder
                 title="Continue with Apple or Google"
-                blurb="Optional sign-in. Only context names and app links would sync — never your logins or session data, which always stay on this Mac."
+                blurb="Optional sign-in. Only space names and app links would sync — never your logins or session data, which always stay on this Mac."
                 ticket="26"
               />
             </>

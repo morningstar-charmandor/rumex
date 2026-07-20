@@ -17,6 +17,8 @@
     "dist:win": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
+    "@dicebear/core": "10.2.0",
+    "@dicebear/styles": "10.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

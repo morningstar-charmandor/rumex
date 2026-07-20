@@ -162,11 +162,14 @@ function syncNotchHelper(state: AppState | null): void {
   const binary = app.isPackaged
     ? join(process.resourcesPath, 'native', 'RumexNotchHelper')
     : join(app.getAppPath(), 'native', 'bin', 'RumexNotchHelper')
+  const logo = app.isPackaged
+    ? join(process.resourcesPath, 'icon.icns')
+    : join(app.getAppPath(), 'build', 'icon.png')
   if (!existsSync(binary)) {
     console.warn('Native notch helper is missing; run npm run build:notch-helper')
     return
   }
-  const child = spawn(binary, [sharedStatePath(), notchCommandPath()], {
+  const child = spawn(binary, [sharedStatePath(), notchCommandPath(), logo], {
     stdio: 'ignore',
     detached: false
   })

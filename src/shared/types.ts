@@ -18,7 +18,7 @@ export interface WorkContext {
   color: string
   /** Emoji chosen for this context; shown in the sidebar and Dock app. */
   icon?: string
-  /** A favicon (data URI) chosen as this context's icon; takes precedence over `icon`. */
+  /** A favicon or avatar (PNG data URI) chosen as this context's icon; takes precedence over `icon`. */
   iconImage?: string
   /** Epoch ms when the user last entered this context; drives the Context Brief. */
   lastVisited?: number

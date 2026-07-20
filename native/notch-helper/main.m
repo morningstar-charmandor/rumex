@@ -45,24 +45,23 @@ static NSImage *DataImage(NSString *uri) {
 @implementation IconView
 - (void)drawRect:(NSRect)dirty {
   NSRect tile = NSInsetRect(self.bounds, 2, 2);
-  NSBezierPath *shape = [NSBezierPath bezierPathWithRoundedRect:tile xRadius:self.appIcon ? 7 : 8 yRadius:self.appIcon ? 7 : 8];
-  [[HexColor(self.item[@"color"] ?: (self.appIcon ? @"#ff4f1f" : @"#3b82f6")) colorWithAlphaComponent:self.selected ? 1 : .9] setFill];
-  [shape fill];
+  CGFloat radius = NSWidth(tile) * .24;
+  NSBezierPath *shape = [NSBezierPath bezierPathWithRoundedRect:tile xRadius:radius yRadius:radius];
   NSImage *image = DataImage(self.item[self.appIcon ? @"favicon" : @"iconImage"]);
   if (image) {
-    [image drawInRect:NSInsetRect(tile, self.appIcon ? 5 : 0, self.appIcon ? 5 : 0) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+    [NSGraphicsContext saveGraphicsState];
+    [shape addClip];
+    [image drawInRect:tile fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+    [NSGraphicsContext restoreGraphicsState];
   } else {
+    [[HexColor(self.item[@"color"] ?: (self.appIcon ? @"#ff4f1f" : @"#3b82f6")) colorWithAlphaComponent:self.selected ? 1 : .9] setFill];
+    [shape fill];
     NSString *icon = self.appIcon ? nil : self.item[@"icon"];
     NSString *name = self.item[@"name"] ?: @"?";
     NSString *value = icon.length ? icon : [[name substringToIndex:MIN((NSUInteger)1, name.length)] uppercaseString];
     NSDictionary *attrs = @{NSFontAttributeName:[NSFont systemFontOfSize:icon.length ? 17 : 12 weight:NSFontWeightSemibold], NSForegroundColorAttributeName:NSColor.whiteColor};
     NSSize size = [value sizeWithAttributes:attrs];
     [value drawAtPoint:NSMakePoint(NSMidX(self.bounds)-size.width/2, NSMidY(self.bounds)-size.height/2) withAttributes:attrs];
-  }
-  if (self.selected) {
-    [[NSColor colorWithRed:.64 green:.45 blue:1 alpha:1] setStroke];
-    NSBezierPath *ring = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(tile,-1,-1) xRadius:9 yRadius:9];
-    ring.lineWidth = 2; [ring stroke];
   }
 }
 @end
@@ -83,8 +82,8 @@ static NSImage *DataImage(NSString *uri) {
   CGFloat width=NSWidth(self.bounds), height=NSHeight(self.bounds);
   if (width<=0 || height<=0) return;
   CGFloat progress=MAX(0,MIN(1,self.expansionProgress));
-  CGFloat shoulder=16+8*progress;
-  CGFloat bottomRadius=10+18*progress;
+  CGFloat shoulder=4+20*progress;
+  CGFloat bottomRadius=8+20*progress;
   shoulder=MIN(shoulder,height*.46);
   bottomRadius=MIN(bottomRadius,(height-shoulder)*.72);
   CGMutablePathRef path=CGPathCreateMutable();
@@ -110,6 +109,7 @@ static NSImage *DataImage(NSString *uri) {
 @interface NotchController : NSObject <NSApplicationDelegate>
 @property NSString *statePath;
 @property NSString *commandPath;
+@property NSImage *logoImage;
 @property NSData *lastStateData;
 @property NSDictionary *state;
 @property RumexNotchPanel *panel;
@@ -127,12 +127,15 @@ static NSImage *DataImage(NSString *uri) {
 @property NSTimeInterval pointerLeftAt;
 @property NSString *expandedContextId;
 @property BOOL animating;
-@property BOOL compactHoverActive;
 @end
 
 @implementation NotchController
-- (instancetype)initWithState:(NSString *)state command:(NSString *)command {
-  if ((self = [super init])) { _statePath = state; _commandPath = command; }
+- (instancetype)initWithState:(NSString *)state command:(NSString *)command logo:(NSString *)logoPath {
+  if ((self = [super init])) {
+    _statePath = state;
+    _commandPath = command;
+    _logoImage = [[NSImage alloc] initWithContentsOfFile:logoPath];
+  }
   return self;
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
@@ -197,6 +200,33 @@ static NSImage *DataImage(NSString *uri) {
 - (void)addAppIcon:(NSDictionary *)app frame:(NSRect)frame to:(NSView *)view {
   IconView *icon = [[IconView alloc] initWithFrame:frame]; icon.item = app; icon.appIcon = YES; [view addSubview:icon];
 }
+- (void)addRumexBrandTo:(NSView *)view width:(CGFloat)width height:(CGFloat)height {
+  if (!self.logoImage) return;
+
+  // A warm radial pool behind the logo echoes the orange light spilling out
+  // from beneath the icon in the product artwork. The surface mask clips the
+  // glow cleanly to the physical-notch silhouette.
+  CGFloat glowWidth=150;
+  NSView *glow=[[NSView alloc] initWithFrame:NSMakeRect(width-glowWidth,0,glowWidth,height)];
+  glow.wantsLayer=YES;
+  CAGradientLayer *gradient=[CAGradientLayer layer];
+  gradient.frame=glow.bounds;
+  gradient.type=kCAGradientLayerRadial;
+  gradient.startPoint=CGPointMake(.72,.12);
+  gradient.endPoint=CGPointMake(.05,1.0);
+  gradient.colors=@[(id)[NSColor colorWithRed:1 green:.34 blue:.03 alpha:.78].CGColor,
+                    (id)[NSColor colorWithRed:1 green:.30 blue:.02 alpha:.28].CGColor,
+                    (id)NSColor.clearColor.CGColor];
+  gradient.locations=@[@0,@.42,@1];
+  [glow.layer addSublayer:gradient];
+  [view addSubview:glow];
+
+  CGFloat logoSize=30;
+  NSImageView *logo=[[NSImageView alloc] initWithFrame:NSMakeRect(width-8-logoSize,(height-logoSize)/2,logoSize,logoSize)];
+  logo.image=self.logoImage;
+  logo.imageScaling=NSImageScaleProportionallyUpOrDown;
+  [view addSubview:logo];
+}
 - (void)renderExpanded:(NSString *)contextId animated:(BOOL)animated {
   NSScreen *screen = [self builtInScreen];
   if (!screen || screen.safeAreaInsets.top <= 0 || !self.state) { [self.panel orderOut:nil]; return; }
@@ -226,8 +256,10 @@ static NSImage *DataImage(NSString *uri) {
   NSMutableArray *targets = [NSMutableArray array];
   NSMutableArray *compactTargets = [NSMutableArray array];
   if (!context) {
-    CGFloat x = 26, y = (compactH-28)/2;
+    [self addRumexBrandTo:next width:compactW height:compactH];
+    CGFloat x = 8, y = (compactH-28)/2;
     [contexts enumerateObjectsUsingBlock:^(NSDictionary *c, NSUInteger i, BOOL *stop) {
+      if (x+i*32+28 > compactW-46) { *stop=YES; return; }
       BOOL selected=[active isEqualToString:c[@"id"]];
       IconView *icon=[self addContextIcon:c frame:NSMakeRect(x+i*32,y,28,28) selected:selected to:next];
       NSRect global = NSMakeRect(compactScreen.origin.x+x+i*32, compactScreen.origin.y+y, 28, 28);
@@ -245,7 +277,7 @@ static NSImage *DataImage(NSString *uri) {
     }];
     CGFloat top = expandedH-67;
     if (apps.count == 0) {
-      NSTextField *empty = [self label:@"No apps in this context" size:13 weight:NSFontWeightRegular]; empty.textColor = [NSColor colorWithWhite:.65 alpha:1]; empty.frame = NSMakeRect(32,top-32,300,22); [next addSubview:empty];
+      NSTextField *empty = [self label:@"No apps in this space" size:13 weight:NSFontWeightRegular]; empty.textColor = [NSColor colorWithWhite:.65 alpha:1]; empty.frame = NSMakeRect(32,top-32,300,22); [next addSubview:empty];
     }
     [apps enumerateObjectsUsingBlock:^(NSDictionary *app, NSUInteger i, BOOL *stop) {
       if (i >= 9) { *stop=YES; return; }
@@ -283,7 +315,7 @@ static NSImage *DataImage(NSString *uri) {
         if (linear>=1) {
           [timer invalidate]; strongSelf.geometryTimer=nil;
           next.frame=finalLocal; [strongSelf.host addSubview:next]; [old removeFromSuperview];
-          strongSelf.surface=next; strongSelf.compactHoverActive=NO; strongSelf.animating=NO;
+          strongSelf.surface=next; strongSelf.animating=NO;
         }
       }];
       [[NSRunLoop mainRunLoop] addTimer:self.geometryTimer forMode:NSRunLoopCommonModes];
@@ -299,15 +331,6 @@ static NSImage *DataImage(NSString *uri) {
     }
   } else { [old removeFromSuperview]; }
 }
-- (void)setCompactHovered:(BOOL)hovered animated:(BOOL)animated {
-  if (self.compactHoverActive==hovered || !self.surface || ((NotchSurfaceView *)self.surface).expandedStyle) return;
-  self.compactHoverActive=hovered;
-  CGFloat scale=hovered?1.10:1.0;
-  CALayer *layer=self.surface.layer;
-  CGFloat current=[[layer.presentationLayer valueForKeyPath:@"transform.scale"] doubleValue]; if (current<=0) current=hovered?1:1.1;
-  [layer setValue:@(scale) forKeyPath:@"transform.scale"];
-  if (animated) { CABasicAnimation *motion=[CABasicAnimation animationWithKeyPath:@"transform.scale"]; motion.fromValue=@(current); motion.toValue=@(scale); motion.duration=hovered?.18:.20; motion.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut]; [layer addAnimation:motion forKey:@"rumexCompactHover"]; }
-}
 - (void)updateItemHoverAtPoint:(NSPoint)point {
   for (NSMutableDictionary *target in self.clickTargets) {
     NSView *view=target[@"hoverView"]; if (!view) continue;
@@ -315,10 +338,19 @@ static NSImage *DataImage(NSString *uri) {
     if ([target[@"hovered"] boolValue]==hovered) continue;
     target[@"hovered"]=@(hovered);
     CGFloat base=[target[@"baseAlpha"] doubleValue], alpha=hovered?1:base;
-    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) { ctx.duration=.12; view.animator.alphaValue=alpha; } completionHandler:nil];
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
+      ctx.duration=.20;
+      ctx.timingFunction=[CAMediaTimingFunction functionWithControlPoints:.22 :.78 :.24 :1.0];
+      view.animator.alphaValue=alpha;
+    } completionHandler:nil];
     if ([target[@"kind"] isEqualToString:@"context"]) {
-      CGFloat scale=hovered?1.07:1.0; CALayer *layer=view.layer;
-      CABasicAnimation *motion=[CABasicAnimation animationWithKeyPath:@"transform.scale"]; motion.fromValue=[layer.presentationLayer valueForKeyPath:@"transform.scale"] ?: @1; motion.toValue=@(scale); motion.duration=.12; motion.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut]; [layer setValue:@(scale) forKeyPath:@"transform.scale"]; [layer addAnimation:motion forKey:@"rumexItemHover"];
+      CGFloat scale=hovered?1.055:1.0; CALayer *layer=view.layer;
+      NSNumber *current=[layer.presentationLayer valueForKeyPath:@"transform.scale"] ?: [layer valueForKeyPath:@"transform.scale"] ?: @1;
+      CABasicAnimation *motion=[CABasicAnimation animationWithKeyPath:@"transform.scale"];
+      motion.fromValue=current; motion.toValue=@(scale); motion.duration=.20;
+      motion.timingFunction=[CAMediaTimingFunction functionWithControlPoints:.22 :.78 :.24 :1.0];
+      [layer setValue:@(scale) forKeyPath:@"transform.scale"];
+      [layer addAnimation:motion forKey:@"rumexItemHover"];
     }
   }
 }
@@ -347,17 +379,13 @@ static NSImage *DataImage(NSString *uri) {
     if (now-self.pointerLeftAt >= .22) { self.expandedContextId=nil; self.hoverContextId=nil; self.pointerLeftAt=0; [self renderExpanded:nil animated:YES]; }
     return;
   }
-  NSRect compactHoverRect=self.surfaceScreenRect;
-  if (self.compactHoverActive) compactHoverRect=NSMakeRect(NSMinX(compactHoverRect)-NSWidth(compactHoverRect)*.05,NSMinY(compactHoverRect)-NSHeight(compactHoverRect)*.10,NSWidth(compactHoverRect)*1.10,NSHeight(compactHoverRect)*1.10);
-  BOOL overCompact=NSPointInRect(p,compactHoverRect);
-  [self setCompactHovered:overCompact animated:YES];
   [self updateItemHoverAtPoint:p];
   NSString *over = nil;
   for (NSDictionary *target in self.compactTargets) if (NSPointInRect(p,[target[@"rect"] rectValue])) { over=target[@"contextId"]; break; }
   if (!over) { self.hoverContextId=nil; self.hoverBegan=0; return; }
   NSTimeInterval now = NSDate.date.timeIntervalSince1970;
   if (![over isEqualToString:self.hoverContextId]) { self.hoverContextId=over; self.hoverBegan=now; return; }
-  if (now-self.hoverBegan >= 1.0) { [self setCompactHovered:NO animated:NO]; self.expandedContextId=over; [self renderExpanded:over animated:YES]; }
+  if (now-self.hoverBegan >= 1.0) { self.expandedContextId=over; [self renderExpanded:over animated:YES]; }
 }
 - (void)handleClick:(NSPoint)point {
   for (NSDictionary *target in self.clickTargets) if (NSPointInRect(point,[target[@"rect"] rectValue])) { [self send:target]; return; }
@@ -371,10 +399,10 @@ static NSImage *DataImage(NSString *uri) {
 
 int main(int argc,const char *argv[]) {
   @autoreleasepool {
-    if (argc<3) return 2;
+    if (argc<4) return 2;
     if (!AcquireNotchSingleton(@(argv[2]))) return 0;
     NSApplication *app=NSApplication.sharedApplication;
-    NotchController *controller=[[NotchController alloc] initWithState:@(argv[1]) command:@(argv[2])];
+    NotchController *controller=[[NotchController alloc] initWithState:@(argv[1]) command:@(argv[2]) logo:@(argv[3])];
     app.delegate=controller; [app run];
   }
   return 0;
