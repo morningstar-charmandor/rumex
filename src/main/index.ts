@@ -13,7 +13,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
-import { FIREFOX_UA, isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
+import { isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
 import { openHonestLoginWindow } from './loginWindow'
 
@@ -284,15 +284,15 @@ app.on('web-contents-created', (_event, contents) => {
     }
   })
 
-  // Popups (OAuth sign-in flows etc.) are allowed and automatically inherit
-  // the opener webview's isolated session partition. Anything non-http(s) is
-  // denied. A popup's navigator.userAgent is fixed at birth from the global
-  // userAgentFallback and cannot be rewritten afterwards, so for Google-bound
-  // popups we swap the fallback to Firefox for exactly the synchronous window
-  // in which the popup is created, then restore it. Google rejects sign-in
-  // from anything it detects as an embedded browser; Firefox has none of the
-  // Chrome-only signals it cross-checks. (Header + navigator both come from
-  // this single UA, so they stay consistent — the mismatch itself was a tell.)
+  // Popups (third-party "Sign in with Google" OAuth flows etc.) are allowed and
+  // automatically inherit the opener webview's isolated session partition.
+  // Anything non-http(s) is denied. A popup's navigator.userAgent is fixed at
+  // birth from the global userAgentFallback and cannot be rewritten afterwards,
+  // so for Google-bound popups we swap the fallback to our honest UA for exactly
+  // the synchronous window in which the popup is created, then restore it. A
+  // popup is a genuine top-level window, so the honest UA the dedicated login
+  // window uses (app token kept, Electron stripped) is accepted here too —
+  // including Workspace accounts the old Firefox disguise could not sign in.
   contents.setWindowOpenHandler(({ url, disposition }) => {
     // "Open in new tab" actions (target=_blank / plain window.open) arrive as
     // foreground/background-tab. Rather than spawn a detached OS window, open
@@ -310,10 +310,10 @@ app.on('web-contents-created', (_event, contents) => {
       if (isGoogleUrl(url)) {
         // A popup takes its UA from the global fallback when its first
         // navigation commits — not at construction — and it can't be
-        // rewritten afterwards. Set Firefox now and restore Chrome only once
-        // that first navigation has committed, so the restore can't revert
-        // the popup to Chrome mid-flight.
-        app.userAgentFallback = FIREFOX_UA
+        // rewritten afterwards. Set the honest UA now and restore the default
+        // only once that first navigation has committed, so the restore can't
+        // revert the popup mid-flight.
+        app.userAgentFallback = LOGIN_HONEST_UA
         contents.once('did-create-window', (popup) => {
           popup.webContents.once('did-navigate', () => {
             app.userAgentFallback = CHROME_UA
