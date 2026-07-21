@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "npm run build:notch-helper && electron-vite dev",
     "build:notch-helper": "sh scripts/build-notch-helper.sh",
+    "test": "node --test --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

@@ -200,7 +200,7 @@ Google refuses sign-in from anything it detects as an embedded browser. What act
 3. Hide inactive webviews with `opacity:0`, never `visibility:hidden`; pin the shadow iframe to 100% + ResizeObserver (cropping bug).
 4. Dock apps: **clone (cp -Rc), don’t symlink Frameworks** (SIGTRAP); build in temp + atomic swap; recursive-remove `app.asar`; **don’t rename exec/CFBundleName** (helper-lookup crash); ad-hoc codesign; stub package name must match main.
 5. Client apps: separate userData per context; **copy** partitions on first launch; single-instance lock is per-dir.
-6. Google sign-in: present **Firefox** UA; the popup takes its UA from the **global `userAgentFallback` at creation** — swap just-in-time and restore on `did-navigate`.
+6. Google web-app sign-in: use the honest top-level login window and keep the app token in its UA. Only third-party OAuth popups retain the just-in-time Firefox fallback.
 7. Favicons: resolve in **main** from the URL (page-favicon-updated is unreliable; CSP blocks remote images).
 8. Tailwind v4 dark mode: `@custom-variant dark` + a `.dark` class (not the media query).
 9. ⌘K/⌘, must be forwarded from focused webviews via `before-input-event`.
