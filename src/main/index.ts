@@ -13,7 +13,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, watchFile } from 'fs'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
-import { isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
+import { isGoogleSignInUrl } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest } from '../shared/types'
 import { openHonestLoginWindow } from './loginWindow'
 
@@ -307,19 +307,36 @@ app.on('web-contents-created', (_event, contents) => {
       return { action: 'deny' }
     }
     if (/^https?:\/\//i.test(url)) {
-      if (isGoogleUrl(url)) {
-        // A popup takes its UA from the global fallback when its first
-        // navigation commits — not at construction — and it can't be
-        // rewritten afterwards. Set the honest UA now and restore the default
-        // only once that first navigation has committed, so the restore can't
-        // revert the popup mid-flight.
-        app.userAgentFallback = LOGIN_HONEST_UA
-        contents.once('did-create-window', (popup) => {
-          popup.webContents.once('did-navigate', () => {
-            app.userAgentFallback = CHROME_UA
-          })
+      // EXPERIMENT (diagnostic): force the honest UA on EVERY popup — not only
+      // ones whose FIRST url is Google, since a "Sign in with Google" popup can
+      // start on the app's own domain and only then redirect to Google. Set it
+      // both via the global fallback (what a popup reads at birth) and directly
+      // on the popup's webContents, delay the restore until the popup closes so
+      // it can't revert mid-flight, and log the popup's real URL + the UA the
+      // page actually sees — so we can tell whether the honest UA reached Google.
+      app.userAgentFallback = LOGIN_HONEST_UA
+      contents.once('did-create-window', (popup) => {
+        const wc = popup.webContents
+        try {
+          wc.setUserAgent(LOGIN_HONEST_UA)
+        } catch {
+          // ignore if too late
+        }
+        const report = async (phase: string): Promise<void> => {
+          try {
+            const seen = await wc.executeJavaScript('navigator.userAgent')
+            console.log(`\n[POPUP ${phase}] url = ${wc.getURL()}`)
+            console.log(`[POPUP ${phase}] page sees UA = ${seen}\n`)
+          } catch {
+            console.log(`\n[POPUP ${phase}] url = ${wc.getURL()} (could not read UA)\n`)
+          }
+        }
+        wc.on('did-navigate', () => void report('did-navigate'))
+        wc.on('did-navigate-in-page', () => void report('in-page'))
+        popup.on('closed', () => {
+          app.userAgentFallback = CHROME_UA
         })
-      }
+      })
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
