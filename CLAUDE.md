@@ -29,8 +29,16 @@ window closes so a re-challenge can't reopen it in a flicker loop.
 
 ### Still open / be careful
 
-- `FIREFOX_UA` is still used for third-party OAuth popups (`setWindowOpenHandler`)
-  — left as a fallback; not exercised by the Google web-app login path.
+- **Third-party "Sign in with Google" OAuth popups work too now.** Give the popup
+  the honest UA (`LOGIN_HONEST_UA`) for its WHOLE life: set the global
+  `userAgentFallback` at popup birth AND `popup.webContents.setUserAgent`, and
+  restore the fallback only on popup `closed`. Reverting the UA after the first
+  step is what made Google reject the multi-step OAuth flow. `FIREFOX_UA` is now
+  fully retired (unused). Verified end-to-end (Notion "Continue with Google").
+- **Passkeys / Touch ID don't work in Electron** — accounts prompted for a passkey
+  must use "Try another way" → password. (Bluetooth/phone passkeys *might* work in
+  a packaged app if `NSBluetoothAlwaysUsageDescription` is added to the Info.plist
+  — untested.)
 - The running Google webview uses the renderer's UA (`window.api.userAgent`, which
   strips the app token) while the login window keeps the app token — a slight
   mismatch that tested fine but could be unified later.

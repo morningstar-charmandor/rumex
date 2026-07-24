@@ -307,33 +307,25 @@ app.on('web-contents-created', (_event, contents) => {
       return { action: 'deny' }
     }
     if (/^https?:\/\//i.test(url)) {
-      // EXPERIMENT (diagnostic): force the honest UA on EVERY popup — not only
-      // ones whose FIRST url is Google, since a "Sign in with Google" popup can
-      // start on the app's own domain and only then redirect to Google. Set it
-      // both via the global fallback (what a popup reads at birth) and directly
-      // on the popup's webContents, delay the restore until the popup closes so
-      // it can't revert mid-flight, and log the popup's real URL + the UA the
-      // page actually sees — so we can tell whether the honest UA reached Google.
+      // "Sign in with Google" (and other OAuth) popups: present our honest UA
+      // for the WHOLE popup, not just its first step. Google's sign-in is
+      // multi-step (identifier → challenge → consent → callback); if the UA
+      // reverts after the first navigation, the later steps read as a bare
+      // "pure Chrome" claim and Google blocks it ("browser may not be secure").
+      // So set the honest UA via the global fallback (what a popup reads at
+      // birth) AND directly on the popup's webContents, and don't restore the
+      // fallback until the popup closes. Verified end-to-end: this signs in
+      // through the OAuth popup, including cases the old Firefox disguise failed.
+      // (Passkey / Touch-ID steps still can't work in Electron — on such
+      // accounts users pick "Try another way" → password.)
       app.userAgentFallback = LOGIN_HONEST_UA
       contents.once('did-create-window', (popup) => {
-        const wc = popup.webContents
         try {
-          wc.setUserAgent(LOGIN_HONEST_UA)
+          popup.webContents.setUserAgent(LOGIN_HONEST_UA)
         } catch {
-          // ignore if too late
+          // ignore if the popup's first navigation already committed
         }
-        const report = async (phase: string): Promise<void> => {
-          try {
-            const seen = await wc.executeJavaScript('navigator.userAgent')
-            console.log(`\n[POPUP ${phase}] url = ${wc.getURL()}`)
-            console.log(`[POPUP ${phase}] page sees UA = ${seen}\n`)
-          } catch {
-            console.log(`\n[POPUP ${phase}] url = ${wc.getURL()} (could not read UA)\n`)
-          }
-        }
-        wc.on('did-navigate', () => void report('did-navigate'))
-        wc.on('did-navigate-in-page', () => void report('in-page'))
-        popup.on('closed', () => {
+        popup.once('closed', () => {
           app.userAgentFallback = CHROME_UA
         })
       })
