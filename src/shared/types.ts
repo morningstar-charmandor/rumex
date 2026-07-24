@@ -120,11 +120,9 @@ export interface Api {
 }
 
 /**
- * Google rejects sign-in from browsers it can identify as embedded, and
- * cross-checks a claimed Chrome against real-Chrome-only signals. Presenting
- * as Firefox — which claims none of those signals — is the approach proven by
- * Ferdium/Rambox. Google-domain apps use this UA wholesale so headers and
- * navigator.userAgent agree from the very first document.
+ * Fallback identity for third-party OAuth popups that navigate to Google.
+ * Google web-app sign-in itself uses the validated honest top-level window;
+ * running Google webviews do not use this disguise.
  */
 export const FIREFOX_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.0) Gecko/20100101 Firefox/141.0'

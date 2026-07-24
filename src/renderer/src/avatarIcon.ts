@@ -3,11 +3,6 @@ import thumbs from '@dicebear/styles/thumbs.json'
 
 const thumbsStyle = new Style(thumbs)
 
-export const THUMB_AVATAR_SEEDS = Array.from(
-  { length: 18 },
-  (_, index) => `rumex-context-${index + 1}`
-)
-
 export function thumbAvatarDataUri(seed: string): string {
   return new Avatar(thumbsStyle, { seed, size: 128 }).toDataUri()
 }

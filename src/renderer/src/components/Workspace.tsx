@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { ActiveApp, WebApp, WorkContext } from '../../../shared/types'
 import { partitionFor } from '../../../shared/types'
-import { appKey } from '../App'
+import { appKey } from '../../../shared/identity'
 
 interface WorkspaceProps {
   contexts: WorkContext[]

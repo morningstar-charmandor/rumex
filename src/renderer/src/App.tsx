@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import type { ActiveApp, AppState, Theme, UpdateInfo } from '../../shared/types'
 import { partitionFor } from '../../shared/types'
+import { appKey } from '../../shared/identity'
+import { normalizeAppState } from '../../shared/state'
 import type { WebviewElement } from './env'
 import { renderIconPngBase64 } from './dockIcon'
 import { cleanTitle, nameFromUrl, parseBadge } from './catalog'
@@ -10,6 +12,8 @@ import Workspace from './components/Workspace'
 import CommandPalette from './components/CommandPalette'
 import UpdateToast from './components/UpdateToast'
 import Settings from './components/Settings'
+import type { NavAction } from './navigation'
+import { useStatePersistence } from './hooks/useStatePersistence'
 
 export const CONTEXT_COLORS = [
   '#60a5fa',
@@ -21,10 +25,6 @@ export const CONTEXT_COLORS = [
   '#2dd4bf',
   '#fb923c'
 ]
-
-export function appKey(contextId: string, appId: string): string {
-  return `${contextId}:${appId}`
-}
 
 export const DEFAULT_SLEEP_MINUTES = 15
 
@@ -45,8 +45,6 @@ function activeWebview(active: ActiveApp | null): WebviewElement | null {
   ) as WebviewElement | null
 }
 
-export type NavAction = 'back' | 'forward' | 'reload'
-
 export default function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
   const [navState, setNavState] = useState({ canGoBack: false, canGoForward: false })
@@ -54,7 +52,6 @@ export default function App(): JSX.Element {
   // stay mounted (just hidden) so switching contexts is instant and sessions
   // stay warm.
   const [openedKeys, setOpenedKeys] = useState<Set<string>>(new Set())
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   // Mirror of the latest state for callbacks that need it without re-subscribing.
   const stateRef = useRef<AppState | null>(null)
   stateRef.current = state
@@ -73,50 +70,15 @@ export default function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
 
+  useStatePersistence(state, setState)
+
   useEffect(() => {
     window.api.loadState().then((saved) => {
-      const next = saved ?? seedState()
-      // Repair icons saved before the one-grapheme clamp existed.
-      next.contexts = next.contexts.map((c) =>
-        c.icon && [...c.icon].length > 2 ? { ...c, icon: undefined } : c
-      )
+      const next = normalizeAppState(saved) ?? seedState()
       setState(next)
       if (next.activeApp) {
         setOpenedKeys(new Set([appKey(next.activeApp.contextId, next.activeApp.appId)]))
       }
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!state) return
-    clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => window.api.saveState(state), 300)
-    return () => clearTimeout(saveTimer.current)
-  }, [state])
-
-  // Another process (main app ↔ client Dock apps) changed the shared state:
-  // adopt its contexts, keep the local selection when it still exists. Events
-  // caused by our own saves are no-ops because the content matches.
-  useEffect(() => {
-    return window.api.onStateExternalChange(async () => {
-      const fresh = await window.api.loadState()
-      if (!fresh) return
-      setState((current) => {
-        if (!current) return fresh
-        if (JSON.stringify(fresh.contexts) === JSON.stringify(current.contexts)) return current
-        const activeStillExists =
-          current.activeApp != null &&
-          fresh.contexts.some(
-            (c) =>
-              c.id === current.activeApp?.contextId &&
-              c.apps.some((a) => a.id === current.activeApp?.appId)
-          )
-        return {
-          ...current,
-          contexts: fresh.contexts,
-          activeApp: activeStillExists ? current.activeApp : null
-        }
-      })
     })
   }, [])
 

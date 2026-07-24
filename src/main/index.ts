@@ -15,8 +15,13 @@ import type { ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readJson, readJsonFile, writeJson, writeJsonFile } from './store'
 import { createDockApp } from './dockapp'
+import { resolveFavicon } from './faviconService'
+import { findAvailableUpdate } from './updateService'
 import { FIREFOX_UA, isGoogleUrl, isGoogleSignInUrl } from '../shared/types'
+import { partitionFor } from '../shared/types'
 import type { ActiveApp, AppState, DockAppRequest, NotchCompatibility } from '../shared/types'
+import { normalizeAppState } from '../shared/state'
+import { IPC } from '../shared/ipc'
 import { openHonestLoginWindow } from './loginWindow'
 
 const APP_STATE_FILE = 'app-state.json'
@@ -25,20 +30,7 @@ const WINDOW_STATE_FILE = 'window-state.json'
 
 /** owner/repo whose GitHub Releases feed the update-available notice. */
 const UPDATE_REPO = 'morningstar-charmandor/rumex'
-const GITHUB_API_VERSION = '2022-11-28'
 const GITHUB_USER_AGENT = `Rumex/${app.getVersion()} (${UPDATE_REPO})`
-
-/** True if `remote` is a higher dotted version than `local` (e.g. 0.2.0 > 0.1.0). */
-function isNewerVersion(remote: string, local: string): boolean {
-  const r = remote.split('.').map((n) => parseInt(n, 10) || 0)
-  const l = local.split('.').map((n) => parseInt(n, 10) || 0)
-  for (let i = 0; i < Math.max(r.length, l.length); i++) {
-    const a = r[i] ?? 0
-    const b = l[i] ?? 0
-    if (a !== b) return a > b
-  }
-  return false
-}
 
 // Per-context Dock apps launch this same entry with CW_* env vars set by
 // their stub. Client mode gets its own userData directory (two Chromium
@@ -55,11 +47,9 @@ if (clientContextId) {
   )
 }
 
-// Default UA for any window without an explicit one: plain Chrome with the
-// Electron/app tokens stripped. Webviews override this per-element (Chrome
-// normally, Firefox for Google apps); popups inherit it at birth — which is
-// the only point a popup's navigator.userAgent can be set (see the
-// window-open handler, where it is briefly swapped to Firefox for Google).
+// Default UA for windows without an explicit identity: Chrome with the
+// Electron/app tokens stripped. The honest Google login window explicitly
+// keeps the app token; third-party OAuth popups may briefly use Firefox.
 const RAW_UA = app.userAgentFallback
 const CHROME_UA = RAW_UA.replace(/\sElectron\/\S+/i, '').replace(/\srumex\/\S+/i, '')
 // Honest sign-in UA: strip ONLY the Electron token, KEEPING the app token. This
@@ -193,7 +183,7 @@ function activateContextFromShortcut(contextId: string): void {
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
-    win.webContents.send('context:activate', contextId)
+    win.webContents.send(IPC.contextActivate, contextId)
   }
   if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', deliver)
   else deliver()
@@ -211,7 +201,7 @@ function activateAppFromShortcut(contextId: string, appId: string): void {
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
-    win.webContents.send('app:activate', contextId, appId)
+    win.webContents.send(IPC.appActivate, contextId, appId)
   }
   if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', deliver)
   else deliver()
@@ -315,20 +305,19 @@ app.on('web-contents-created', (_event, contents) => {
     if (!win || win.isDestroyed()) return
     if (input.key.toLowerCase() === 'k') {
       event.preventDefault()
-      win.webContents.send('palette:toggle')
+      win.webContents.send(IPC.paletteToggle)
     } else if (input.key === ',') {
       event.preventDefault()
-      win.webContents.send('settings:toggle')
+      win.webContents.send(IPC.settingsToggle)
     }
   })
 
-  // Honest Google sign-in (EXPERIMENT — matches the standalone tester that
-  // Google accepted). When a Google web-app's webview is about to load a Google
-  // *sign-in* page, cancel that navigation and complete sign-in in a real
+  // Validated honest Google sign-in. When a Google web-app's webview is about
+  // to load a Google *sign-in* page, cancel that navigation and complete it in a real
   // top-level window with our honest identity (LOGIN_HONEST_UA), sharing this
   // webview's own session; on success, send the app to Google's post-login
   // destination, now authenticated. For this experiment the Firefox disguise is
-  // switched off (the Google webview uses the honest UA — see Workspace.tsx).
+  // switched off (the Google webview uses the cleaned renderer UA).
   let honestLoginOpen = false
   // After a login window closes, briefly ignore further sign-in navigations so a
   // page that bounces back to sign-in can't reopen the window in a flicker loop.
@@ -398,7 +387,7 @@ app.on('web-contents-created', (_event, contents) => {
       (disposition === 'foreground-tab' || disposition === 'background-tab')
     ) {
       const win = mainWindow
-      if (win && !win.isDestroyed()) win.webContents.send('context:open-url', url)
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.contextOpenUrl, url)
       return { action: 'deny' }
     }
     if (/^https?:\/\//i.test(url)) {
@@ -444,79 +433,6 @@ function centeredPopupBounds(): { width: number; height: number; x?: number; y?:
   return { width, height, x, y }
 }
 
-/** Downloads a URL and returns it as an image data URI, or null. */
-async function toImageDataUri(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000), redirect: 'follow' })
-    if (!res.ok) return null
-    const type = res.headers.get('content-type') ?? 'image/png'
-    if (!type.startsWith('image/')) return null
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.length === 0 || buf.length > 512 * 1024) return null
-    return `data:${type};base64,${buf.toString('base64')}`
-  } catch {
-    return null
-  }
-}
-
-/** Picks the best <link rel="...icon..."> href from page HTML, absolute-resolved. */
-function iconLinksFromHtml(html: string, baseUrl: string): string[] {
-  const links: { href: string; weight: number }[] = []
-  const linkTag = /<link\b[^>]*>/gi
-  let m: RegExpExecArray | null
-  while ((m = linkTag.exec(html)) !== null) {
-    const tag = m[0]
-    const rel = /\brel\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]?.toLowerCase()
-    if (!rel || !rel.includes('icon')) continue
-    const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
-    if (!href) continue
-    // Prefer higher-resolution icons: apple-touch-icon, then large sizes.
-    const sizes = /\bsizes\s*=\s*["'](\d+)/i.exec(tag)?.[1]
-    const weight =
-      (rel.includes('apple-touch') ? 1000 : 0) + (sizes ? parseInt(sizes, 10) : 0)
-    try {
-      links.push({ href: new URL(href, baseUrl).toString(), weight })
-    } catch {
-      // ignore malformed href
-    }
-  }
-  return links.sort((a, b) => b.weight - a.weight).map((l) => l.href)
-}
-
-async function resolveFavicon(pageUrl: string): Promise<string | null> {
-  if (!/^https?:\/\//i.test(pageUrl)) return null
-  let origin: string
-  let host: string
-  try {
-    const u = new URL(pageUrl)
-    origin = u.origin
-    host = u.host
-  } catch {
-    return null
-  }
-
-  // 1. Parse the page's declared icon links (best quality, matches the browser).
-  try {
-    const res = await fetch(pageUrl, { signal: AbortSignal.timeout(6000), redirect: 'follow' })
-    if (res.ok) {
-      const html = (await res.text()).slice(0, 200_000)
-      for (const href of iconLinksFromHtml(html, res.url || pageUrl).slice(0, 4)) {
-        const data = await toImageDataUri(href)
-        if (data) return data
-      }
-    }
-  } catch {
-    // fall through
-  }
-
-  // 2. The conventional /favicon.ico.
-  const ico = await toImageDataUri(`${origin}/favicon.ico`)
-  if (ico) return ico
-
-  // 3. Last resort: a favicon service (returns the site's real icon).
-  return toImageDataUri(`https://www.google.com/s2/favicons?domain=${host}&sz=64`)
-}
-
 /** Window background matching the persisted theme, to avoid a flash on launch. */
 function initialBackgroundColor(): string {
   const state = readJsonFile<AppState | null>(sharedStatePath(), null)
@@ -526,12 +442,12 @@ function initialBackgroundColor(): string {
 }
 
 function loadState(): AppState | null {
-  if (!clientContextId) return readJson<AppState | null>(APP_STATE_FILE, null)
+  if (!clientContextId) return normalizeAppState(readJson<unknown>(APP_STATE_FILE, null))
 
   // Client mode: contexts/apps come from the main app's state file (read
   // only); only the active app selection is remembered per client.
   const shared = mainAppUserData
-    ? readJsonFile<AppState | null>(join(mainAppUserData, APP_STATE_FILE), null)
+    ? normalizeAppState(readJsonFile<unknown>(join(mainAppUserData, APP_STATE_FILE), null))
     : null
   const context = shared?.contexts.find((c) => c.id === clientContextId) ?? {
     id: clientContextId,
@@ -564,22 +480,24 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(() => {
     ensureClientPartitions()
 
-    ipcMain.on('notch:compatibility', (event) => {
+    ipcMain.on(IPC.notchCompatibility, (event) => {
       event.returnValue = notchCompatibility()
     })
 
-    ipcMain.on('context:activate', (_event, contextId: string) => {
+    ipcMain.on(IPC.contextActivate, (_event, contextId: string) => {
       if (typeof contextId === 'string') activateContextFromShortcut(contextId)
     })
 
-    ipcMain.handle('state:load', (): AppState | null => loadState())
+    ipcMain.handle(IPC.stateLoad, (): AppState | null => loadState())
 
-    ipcMain.handle('state:save', (_event, state: AppState): void => {
+    ipcMain.handle(IPC.stateSave, (_event, candidate: unknown): void => {
+      const state = normalizeAppState(candidate)
+      if (!state) throw new TypeError('Invalid application state')
       if (clientContextId) {
         writeJson(CLIENT_STATE_FILE, { activeApp: state.activeApp })
         // Merge this context's apps back into the shared state file so
         // changes made in a client app appear in the main app too.
-        const shared = readJsonFile<AppState | null>(sharedStatePath(), null)
+        const shared = normalizeAppState(readJsonFile<unknown>(sharedStatePath(), null))
         const mine = state.contexts.find((c) => c.id === clientContextId)
         if (shared && mine) {
           const contexts = shared.contexts.some((c) => c.id === clientContextId)
@@ -594,8 +512,13 @@ if (!gotSingleInstanceLock) {
     })
 
     // Wipe every trace of an app instance's session when it is removed.
-    ipcMain.handle('partition:clear', async (_event, partition: string): Promise<void> => {
-      if (!partition.startsWith('persist:')) return
+    ipcMain.handle(IPC.partitionClear, async (_event, partition: unknown): Promise<void> => {
+      if (typeof partition !== 'string') throw new TypeError('Invalid partition')
+      const state = loadState()
+      const isKnownPartition = state?.contexts.some((context) =>
+        context.apps.some((webApp) => partitionFor(context.id, webApp.id) === partition)
+      )
+      if (!isKnownPartition) throw new TypeError('Unknown application partition')
       const ses = session.fromPartition(partition)
       await ses.clearStorageData()
       await ses.clearCache()
@@ -606,17 +529,19 @@ if (!gotSingleInstanceLock) {
     // CSP can keep blocking remote images; the chosen icon comes back as a
     // data URI. Given an app's page URL, try the page's declared icon links,
     // then /favicon.ico, then a favicon service — first success wins.
-    ipcMain.handle('favicon:fetch', (_event, url: string) => resolveFavicon(url))
+    ipcMain.handle(IPC.faviconFetch, (_event, url: unknown) =>
+      typeof url === 'string' && url.length <= 4096 ? resolveFavicon(url) : null
+    )
 
-    ipcMain.on('open-external', (_event, url: string) => {
+    ipcMain.on(IPC.openExternal, (_event, url: string) => {
       if (/^https:\/\//i.test(url)) shell.openExternal(url)
     })
 
-    ipcMain.on('set-login-item', (_event, open: boolean) => {
-      app.setLoginItemSettings({ openAtLogin: open })
+    ipcMain.on(IPC.setLoginItem, (_event, open: unknown) => {
+      if (typeof open === 'boolean') app.setLoginItemSettings({ openAtLogin: open })
     })
 
-    ipcMain.on('get-app-version', (event) => {
+    ipcMain.on(IPC.getAppVersion, (event) => {
       event.returnValue = app.getVersion()
     })
 
@@ -626,47 +551,44 @@ if (!gotSingleInstanceLock) {
     // (Only the main app checks — client Dock apps stay quiet.)
     if (!clientContextId) {
       const checkForUpdate = async (): Promise<void> => {
-        try {
-          const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
-            headers: {
-              Accept: 'application/vnd.github+json',
-              'X-GitHub-Api-Version': GITHUB_API_VERSION,
-              'User-Agent': GITHUB_USER_AGENT
-            },
-            signal: AbortSignal.timeout(8000)
-          })
-          if (!res.ok) {
-            console.warn(`Update check failed: GitHub returned ${res.status} ${res.statusText}`)
-            return
-          }
-          const data = (await res.json()) as { tag_name?: string; html_url?: string }
-          const latest = (data.tag_name ?? '').replace(/^v/, '')
-          if (latest && isNewerVersion(latest, app.getVersion()) && data.html_url) {
-            const win = mainWindow
-            if (win && !win.isDestroyed()) {
-              win.webContents.send('update:available', { version: latest, url: data.html_url })
-            }
-          }
-        } catch {
-          // offline, no releases yet, or rate-limited — stay silent
+        const update = await findAvailableUpdate({
+          repository: UPDATE_REPO,
+          currentVersion: app.getVersion(),
+          userAgent: GITHUB_USER_AGENT
+        })
+        const win = mainWindow
+        if (update && win && !win.isDestroyed()) {
+          win.webContents.send(IPC.updateAvailable, update)
         }
       }
       setTimeout(checkForUpdate, 5000)
       setInterval(checkForUpdate, 6 * 60 * 60 * 1000)
-      ipcMain.on('update:check', () => void checkForUpdate())
+      ipcMain.on(IPC.updateCheck, () => void checkForUpdate())
     }
 
     // Per-app resident memory: map each webview's webContents to its OS pid,
     // then look that pid up in the process metrics (workingSetSize is in KB).
     ipcMain.handle(
-      'metrics:get',
-      (_event, items: { key: string; webContentsId: number }[]) => {
+      IPC.metricsGet,
+      (_event, candidate: unknown) => {
+        const items = Array.isArray(candidate)
+          ? candidate
+              .filter(
+                (item): item is { key: string; webContentsId: number } =>
+                  typeof item === 'object' &&
+                  item !== null &&
+                  typeof (item as { key?: unknown }).key === 'string' &&
+                  typeof (item as { webContentsId?: unknown }).webContentsId === 'number'
+              )
+              .slice(0, 100)
+          : []
         const byPid = new Map<number, number>()
         for (const m of app.getAppMetrics()) byPid.set(m.pid, m.memory.workingSetSize)
         const usage: Record<string, number> = {}
         for (const { key, webContentsId } of items) {
           try {
             const wc = webContents.fromId(webContentsId)
+            if (wc?.hostWebContents?.id !== mainWindow?.webContents.id) continue
             const pid = wc?.getOSProcessId()
             const kb = pid ? byPid.get(pid) : undefined
             if (kb) usage[key] = Math.round(kb / 1024)
@@ -678,7 +600,17 @@ if (!gotSingleInstanceLock) {
       }
     )
 
-    ipcMain.handle('dockapp:create', (_event, request: DockAppRequest) => {
+    ipcMain.handle(IPC.dockAppCreate, (_event, request: DockAppRequest) => {
+      if (
+        !request ||
+        typeof request.contextId !== 'string' ||
+        typeof request.contextName !== 'string' ||
+        typeof request.iconPngBase64 !== 'string' ||
+        request.iconPngBase64.length > 8_000_000 ||
+        !loadState()?.contexts.some((context) => context.id === request.contextId)
+      ) {
+        return { ok: false, error: 'Invalid Dock app request' }
+      }
       const result = createDockApp(request)
       if (result.ok && result.path) shell.showItemInFolder(result.path)
       return result
@@ -711,7 +643,7 @@ if (!gotSingleInstanceLock) {
     // caused by its own saves (content comparison).
     watchFile(sharedStatePath(), { interval: 1500 }, () => {
       const win = mainWindow
-      if (win && !win.isDestroyed()) win.webContents.send('state:external-change')
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.stateExternalChange)
       syncNotchHelper(loadState())
     })
 

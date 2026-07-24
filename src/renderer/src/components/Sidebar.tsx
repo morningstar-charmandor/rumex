@@ -1,13 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
 import type { ActiveApp, MemoryUsage, WebApp, WorkContext } from '../../../shared/types'
-import {
-  THUMB_AVATAR_SEEDS,
-  thumbAvatarDataUri,
-  thumbAvatarPngDataUri
-} from '../avatarIcon'
 import { buildSuggestions } from '../catalog'
-import { appKey, type NavAction } from '../App'
+import type { NavAction } from '../navigation'
+import { appKey } from '../../../shared/identity'
 
 interface SidebarProps {
   contexts: WorkContext[]
@@ -39,6 +35,8 @@ interface SidebarProps {
 }
 
 type Renaming = { kind: 'context'; contextId: string } | { kind: 'app'; contextId: string; appId: string }
+
+const AVATAR_SEEDS = Array.from({ length: 18 }, (_, index) => `rumex-context-${index + 1}`)
 
 function NavButton(props: {
   title: string
@@ -199,11 +197,19 @@ function ContextIconPicker(props: {
 }): JSX.Element {
   const [emoji, setEmoji] = useState('')
   const [avatarLoading, setAvatarLoading] = useState<string | null>(null)
+  const [avatars, setAvatars] = useState<{ seed: string; image: string }[]>([])
   const appIcons = props.context.apps.filter((a) => a.favicon)
-  const avatars = useMemo(
-    () => THUMB_AVATAR_SEEDS.map((seed) => ({ seed, image: thumbAvatarDataUri(seed) })),
-    []
-  )
+  useEffect(() => {
+    let cancelled = false
+    void import('../avatarIcon').then(({ thumbAvatarDataUri }) => {
+      if (!cancelled) {
+        setAvatars(AVATAR_SEEDS.map((seed) => ({ seed, image: thumbAvatarDataUri(seed) })))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   return (
     <div
       className="absolute left-2 top-9 z-30 w-64 rounded-lg border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
@@ -237,6 +243,7 @@ function ContextIconPicker(props: {
             onClick={async () => {
               setAvatarLoading(seed)
               try {
+                const { thumbAvatarPngDataUri } = await import('../avatarIcon')
                 props.onSet({ image: await thumbAvatarPngDataUri(seed) })
                 props.onClose()
               } finally {
